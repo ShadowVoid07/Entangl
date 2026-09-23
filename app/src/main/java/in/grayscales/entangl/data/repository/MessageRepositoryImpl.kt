@@ -52,6 +52,11 @@ class MessageRepositoryImpl(
 
         // 3. Start listening on persistent local inbox topic
         networkTransport.startListening(nodeIdentityManager.localUid)
+
+        // 4. Retry any failed outgoing messages
+        scope.launch {
+            retryFailedMessages()
+        }
     }
 
     private suspend fun handleIncomingEnvelope(envelope: TransportEnvelope) {
@@ -282,6 +287,38 @@ class MessageRepositoryImpl(
                 networkTransport.sendDeliveryAck(msg.id, contactUid, nodeIdentityManager.localUid)
             } catch (e: Exception) {
                 Log.e("MessageRepository", "Could not unlock message ${msg.id}: ${e.message}")
+            }
+        }
+    }
+
+    suspend fun retryFailedMessages() {
+        val pendingOutgoing = messageDao.getPendingOutgoingMessages()
+        if (pendingOutgoing.isEmpty()) return
+
+        Log.i("MessageRepository", "Retrying ${pendingOutgoing.size} stuck pending outgoing messages")
+
+        val identityPub = try {
+            cryptoManager.getLocalIdentityPublicKey() ?: ByteArray(0)
+        } catch (_: Exception) {
+            ByteArray(0)
+        }
+
+        for (msg in pendingOutgoing) {
+            val envelope = TransportEnvelope(
+                id = msg.id,
+                type = TransportEnvelope.TYPE_MESSAGE,
+                senderUid = nodeIdentityManager.localUid,
+                senderIdentityPub = identityPub,
+                senderOnion = nodeIdentityManager.localOnion,
+                recipientUid = msg.contactUid,
+                ciphertext = msg.ciphertext,
+                timestamp = msg.timestamp
+            )
+
+            // Attempt one send right away; if it fails, it will just stay pending for the next network event
+            val sent = networkTransport.sendEnvelope(envelope)
+            if (!sent) {
+                Log.w("MessageRepository", "Retry failed for stuck message ${msg.id}")
             }
         }
     }

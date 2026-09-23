@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,6 +60,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import `in`.grayscales.entangl.core.security.PlatformSecurity
 import `in`.grayscales.entangl.core.security.SecurityEvent
+import `in`.grayscales.entangl.data.network.EntanglRelayService
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.navigation.QuantumTwoPaneLayout
 import `in`.grayscales.entangl.ui.onboarding.UsernameSetupScreen
@@ -103,6 +106,14 @@ class MainActivity : ComponentActivity() {
         val activeThreats = platformSecurity.checkThreats()
 
         handleIncomingIntent(intent)
+
+        // Start background relay service
+        val serviceIntent = Intent(this, EntanglRelayService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
 
         setContent {
             EntanglTheme {
@@ -248,7 +259,13 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         containerColor = VoidBackground
                     ) { innerPadding ->
-                        Box(modifier = Modifier.padding(innerPadding)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                                .consumeWindowInsets(innerPadding)
+                                .imePadding()
+                        ) {
                             when (currentScreen) {
                                 AppScreen.MESSAGES -> {
                                     QuantumTwoPaneLayout(

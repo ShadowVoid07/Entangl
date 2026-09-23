@@ -246,6 +246,12 @@ class NetworkTransport {
         }
     }
 
+    fun restartListening(localUid: String) {
+        log("Restarting NetworkTransport listeners...")
+        stopListening()
+        startListening(localUid)
+    }
+
     /**
      * Transmit an encrypted envelope to the recipient's anonymous inbox topic.
      * Concurrently broadcasts (multi-casts) the envelope across all configured relays
@@ -380,7 +386,7 @@ class NetworkTransport {
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
-                readTimeout = 60000 // 60s read timeout; ntfy keepalives arrive every 15-30s
+                readTimeout = 90000 // 90s read timeout; ntfy keepalives arrive every 15-30s
             }
 
             val code = conn.responseCode

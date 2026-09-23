@@ -36,4 +36,7 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) > 0 FROM messages WHERE contactUid = :contactUid AND id LIKE 'accept-%'")
     suspend fun hasAcceptanceNotice(contactUid: String): Boolean
+
+    @Query("SELECT * FROM messages WHERE direction = 1 AND status = 0")
+    suspend fun getPendingOutgoingMessages(): List<MessageEntity>
 }

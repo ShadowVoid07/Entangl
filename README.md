@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/entangl.png" alt="Entangl Logo" width="140" height="140" />
+  <img src="entangl.png" alt="Entangl Logo" width="140" height="140" />
 </p>
 
 <h1 align="center">Entangl</h1>

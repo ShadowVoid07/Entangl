@@ -5,6 +5,7 @@ import `in`.grayscales.entangl.core.identity.NodeIdentityManager
 import `in`.grayscales.entangl.core.identity.SessionKeyStore
 import `in`.grayscales.entangl.data.local.EntanglDatabase
 import `in`.grayscales.entangl.data.network.NetworkTransport
+import `in`.grayscales.entangl.data.network.NetworkMonitor
 import `in`.grayscales.entangl.data.notification.EntanglNotificationManager
 import `in`.grayscales.entangl.data.repository.ContactRepositoryImpl
 import `in`.grayscales.entangl.data.repository.MessageRepositoryImpl
@@ -27,6 +28,7 @@ val appModule = module {
     single { get<EntanglDatabase>().messageDao() }
     single<ContactRepository> { ContactRepositoryImpl(get()) }
     single<MessageRepository> { MessageRepositoryImpl(get(), get(), get(), get(), get(), get()) }
+    single { NetworkMonitor(get(), get(), get(), get<MessageRepository>() as MessageRepositoryImpl) }
     single { EntanglNotificationManager(get()) }
     viewModel { ChatViewModel(get(), get(), get(), get(), get(), get(), get()) }
 }
