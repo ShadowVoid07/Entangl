@@ -1,0 +1,43 @@
+# Built application files
+*.apk
+*.aab
+*.ap_
+*.aapt
+*.app
+
+# Local configuration file (sdk path, etc)
+local.properties
+.gradle-local.properties
+
+# Gradle files
+.gradle/
+build/
+*/build/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# NDK
+obj/
+.cxx/
+.externalNativeBuild/
+
+# OS specific
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Signing (NEVER COMMIT KEYSTORES)
+*.jks
+*.keystore
+keystore.properties
+
+# Logs
+*.log
