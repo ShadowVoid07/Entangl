@@ -29,7 +29,7 @@ data class TransferQrPayload(
                 val bytes = try {
                     Base64.UrlSafe.decode(clean)
                 } catch (_: Exception) {
-                    Base64.Default.decode(clean)
+                    Base64.decode(clean)
                 }
                 Cbor.decodeFromByteArray(serializer(), bytes)
             } catch (_: Exception) {

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -130,7 +129,7 @@ fun HandshakeConfirmDialog(
                                     Spacer(modifier = Modifier.height(2.dp))
                                 }
                                 Text(
-                                    text = "PEER ONION ROUTING",
+                                    text = "ENCRYPTED ROUTING MESH",
                                     fontFamily = QuantumMonospace,
                                     fontSize = 9.sp,
                                     color = SubatomicGray

@@ -5,13 +5,12 @@
 -dontwarn net.zetetic.database.sqlcipher.**
 
 # 2. LazySodium & JNA Native Bindings
--keep class com.goterl.lazysodium.** { *; }
 -dontwarn com.goterl.lazysodium.**
--keep class com.sun.jna.** { *; }
+-keep class com.goterl.lazysodium.** { *; }
 -dontwarn com.sun.jna.**
--keepclassmembers class * extends com.sun.jna.Structure {
-    <fields>;
-    <methods>;
+-keep class com.sun.jna.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
 }
 
 # 3. LibSignal Client

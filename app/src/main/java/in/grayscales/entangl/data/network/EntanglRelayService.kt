@@ -1,16 +1,13 @@
 package `in`.grayscales.entangl.data.network
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import `in`.grayscales.entangl.R
-import `in`.grayscales.entangl.data.network.NetworkMonitor
 import org.koin.android.ext.android.inject
 
 class EntanglRelayService : Service() {
@@ -49,17 +46,14 @@ class EntanglRelayService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "Entangl Relay Service"
-            val descriptionText = "Keeps encrypted connections alive in the background"
-            val importance = NotificationManager.IMPORTANCE_LOW
-            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-            }
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val name = "Entangl Relay Service"
+        val descriptionText = "Keeps encrypted connections alive in the background"
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+            description = descriptionText
         }
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 
     companion object {

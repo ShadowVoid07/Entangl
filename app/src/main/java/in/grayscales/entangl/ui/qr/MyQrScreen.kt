@@ -46,27 +46,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.core.crypto.HandshakeManager
 import `in`.grayscales.entangl.core.util.toHex
-import `in`.grayscales.entangl.domain.model.HandshakePayload
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
-import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun MyQrScreen(
     handshakeManager: HandshakeManager,
     localUid: String,
     localOnion: String,
-    localUsername: String = "",
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    localUsername: String = ""
 ) {
     var payload by remember {
         mutableStateOf(handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername))
@@ -92,7 +91,7 @@ fun MyQrScreen(
     // 60-second rolling countdown timer
     LaunchedEffect(payload) {
         while (secondsRemaining > 0) {
-            delay(1000L)
+            delay(1.seconds)
             secondsRemaining -= 1
         }
         regenerate()
@@ -269,7 +268,7 @@ fun MyQrScreen(
                 )
                 TelemetryRow(label = "PROTOCOL", value = "Entangl v1.0 (CBOR/PQXDH)")
                 TelemetryRow(label = "KEY ALGORITHM", value = "Ed25519 (Identity) + X25519 (Eph)")
-                TelemetryRow(label = "TOR ONION", value = localOnion.take(16) + "..." + localOnion.takeLast(10))
+                TelemetryRow(label = "ROUTING MESH", value = localOnion.take(16) + "..." + localOnion.takeLast(10))
                 TelemetryRow(label = "IDENTITY KEY", value = payload.identityPub.take(8).toByteArray().toHex() + "...")
                 TelemetryRow(label = "NONCE SAMPLE", value = payload.nonce.take(8).toByteArray().toHex() + "...")
             }

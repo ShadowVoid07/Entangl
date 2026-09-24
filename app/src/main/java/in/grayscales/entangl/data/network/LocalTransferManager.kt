@@ -1,6 +1,5 @@
 package `in`.grayscales.entangl.data.network
 
-import android.content.Context
 import android.util.Log
 import `in`.grayscales.entangl.core.crypto.AeadCipher
 import `in`.grayscales.entangl.core.crypto.ContactMigrationItem
@@ -26,7 +25,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.Inet4Address
@@ -50,7 +48,6 @@ sealed class TransferProgress {
  */
 @OptIn(ExperimentalEncodingApi::class)
 class LocalTransferManager(
-    private val context: Context,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val sessionKeyStore: SessionKeyStore,

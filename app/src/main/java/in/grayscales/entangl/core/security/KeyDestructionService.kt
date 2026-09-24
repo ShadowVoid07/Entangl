@@ -2,7 +2,7 @@ package `in`.grayscales.entangl.core.security
 
 import android.content.Context
 import android.util.Log
-import `in`.grayscales.entangl.data.local.EntanglDatabase
+import androidx.core.content.edit
 import `in`.grayscales.entangl.data.network.NetworkTransport
 import java.security.KeyStore
 
@@ -62,7 +62,7 @@ class KeyDestructionService(
         )
         for (prefName in prefsToClear) {
             try {
-                context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit().clear().commit()
+                context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit { clear() }
                 Log.i("KeyDestructionService", "Wiped SharedPreferences: $prefName")
             } catch (e: Exception) {
                 Log.e("KeyDestructionService", "Error clearing pref $prefName: ${e.message}")
@@ -71,10 +71,9 @@ class KeyDestructionService(
 
         // 5. Mark device as permanently decommissioned
         try {
-            context.getSharedPreferences(LIFECYCLE_PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_DECOMMISSIONED, true)
-                .commit()
+            context.getSharedPreferences(LIFECYCLE_PREFS, Context.MODE_PRIVATE).edit {
+                putBoolean(KEY_DECOMMISSIONED, true)
+            }
         } catch (e: Exception) {
             Log.e("KeyDestructionService", "Error writing decommissioned flag: ${e.message}")
         }

@@ -49,4 +49,10 @@ expect class KeyPairGenerator() {
      * @return true if the signature is valid.
      */
     fun verify(publicKey: ByteArray, data: ByteArray, signature: ByteArray): Boolean
+
+    /**
+     * Compute X25519 Diffie-Hellman shared secret between local ephemeral private key
+     * and peer's ephemeral public key.
+     */
+    fun computeX25519KeyAgreement(privateKeyBuffer: NativeKeyBuffer, peerPublicKey: ByteArray): ByteArray
 }

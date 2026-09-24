@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -77,6 +77,7 @@ import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
+import `in`.grayscales.entangl.ui.transfer.DeviceTransferScreen
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
@@ -84,7 +85,8 @@ enum class AppScreen {
     MESSAGES,
     MY_QR,
     SCAN_QR,
-    DASHBOARD
+    DASHBOARD,
+    DEVICE_TRANSFER
 }
 
 class MainActivity : ComponentActivity() {
@@ -94,6 +96,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val platformSecurity: PlatformSecurity by inject()
+    private val keyDestructionService: `in`.grayscales.entangl.core.security.KeyDestructionService by inject()
     private val chatViewModel: ChatViewModel by viewModel()
     private val currentScreenState = mutableStateOf(AppScreen.MESSAGES)
 
@@ -103,17 +106,33 @@ class MainActivity : ComponentActivity() {
 
         // Enforce FLAG_SECURE & touch filtering
         platformSecurity.applyWindowProtection(window)
+
+        if (keyDestructionService.isDeviceDecommissioned()) {
+            setContent {
+                EntanglTheme {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(VoidBackground).padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "DEVICE PERMANENTLY DECOMMISSIONED\n\nAll cryptographic keys and data have been wiped following device migration handoff.",
+                            color = IsotopeMagenta,
+                            fontFamily = QuantumMonospace,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+            return
+        }
+
         val activeThreats = platformSecurity.checkThreats()
 
         handleIncomingIntent(intent)
 
         // Start background relay service
         val serviceIntent = Intent(this, EntanglRelayService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        startForegroundService(serviceIntent)
 
         setContent {
             EntanglTheme {
@@ -302,6 +321,10 @@ class MainActivity : ComponentActivity() {
                                             chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername)
                                             currentScreen = AppScreen.MESSAGES
                                         },
+                                        onTransferDetected = { payload ->
+                                            chatViewModel.localTransferManager.startImportClient(payload)
+                                            currentScreen = AppScreen.DEVICE_TRANSFER
+                                        },
                                         onBack = { currentScreen = AppScreen.MESSAGES }
                                     )
                                 }
@@ -310,7 +333,16 @@ class MainActivity : ComponentActivity() {
                                     QuantumDashboardScreen(
                                         threats = activeThreats,
                                         localUsername = currentUsername,
-                                        onBack = { currentScreen = AppScreen.MESSAGES }
+                                        onBack = { currentScreen = AppScreen.MESSAGES },
+                                        onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER }
+                                    )
+                                }
+
+                                AppScreen.DEVICE_TRANSFER -> {
+                                    DeviceTransferScreen(
+                                        chatViewModel = chatViewModel,
+                                        onBack = { currentScreen = AppScreen.MESSAGES },
+                                        onScanQrForImport = { currentScreen = AppScreen.SCAN_QR }
                                     )
                                 }
                             }
@@ -341,6 +373,7 @@ fun QuantumDashboardScreen(
     threats: List<SecurityEvent>,
     localUsername: String = "",
     onBack: () -> Unit,
+    onDeviceTransfer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -434,6 +467,55 @@ fun QuantumDashboardScreen(
                 SecurityRow(label = "ACTIVE CODENAME", value = localUsername.ifBlank { "Anonymous Node" })
                 SecurityRow(label = "DISPLAY INTEGRITY", value = "FLAG_SECURE + Obscured Touch Filter")
                 SecurityRow(label = "ZERO LEAK NOTIFICATION", value = "VISIBILITY_SECRET Enforced")
+            }
+        }
+
+        // Device Migration & Succession Card
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(DarkMatter)
+                .border(1.dp, ParticleBorder, RoundedCornerShape(12.dp))
+                .padding(16.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "DEVICE SUCCESSION & MIGRATION",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = QuantumCyan
+                )
+                Text(
+                    text = "Transfer account, contacts, and message history to a new device over local encrypted P2P with hardware identity succession and atomic decommissioning.",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    color = SubatomicGray
+                )
+                Button(
+                    onClick = onDeviceTransfer,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = QuantumCyan,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "OPEN DEVICE TRANSFER",
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
             }
         }
 

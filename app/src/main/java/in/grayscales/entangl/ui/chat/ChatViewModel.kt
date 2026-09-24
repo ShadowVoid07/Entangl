@@ -34,7 +34,8 @@ class ChatViewModel(
     val handshakeManager: HandshakeManager,
     private val notificationManager: EntanglNotificationManager,
     val nodeIdentityManager: NodeIdentityManager,
-    private val networkTransport: `in`.grayscales.entangl.data.network.NetworkTransport
+    private val networkTransport: `in`.grayscales.entangl.data.network.NetworkTransport,
+    val localTransferManager: `in`.grayscales.entangl.data.network.LocalTransferManager
 ) : ViewModel() {
 
     // Persistent local node UID and .onion address

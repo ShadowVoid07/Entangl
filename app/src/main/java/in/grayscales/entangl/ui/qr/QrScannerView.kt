@@ -70,6 +70,7 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 import `in`.grayscales.entangl.core.crypto.HandshakeManager
 import `in`.grayscales.entangl.domain.model.HandshakePayload
+import `in`.grayscales.entangl.domain.model.TransferQrPayload
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
@@ -87,6 +88,7 @@ fun QrScannerView(
     handshakeManager: HandshakeManager,
     onPeerConfirmed: (peerUid: String, peerPublicKey: ByteArray, peerOnion: String, safetyNumber: String, peerUsername: String) -> Unit,
     onBack: () -> Unit,
+    onTransferDetected: ((TransferQrPayload) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -111,6 +113,7 @@ fun QrScannerView(
     var useFrontCamera by remember { mutableStateOf(false) }
     var isTargetLocked by remember { mutableStateOf(false) }
     var scannedPayload by remember { mutableStateOf<HandshakePayload?>(null) }
+    var scannedTransferPayload by remember { mutableStateOf<TransferQrPayload?>(null) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
@@ -227,7 +230,7 @@ fun QrScannerView(
             .setResolutionSelector(resolutionSelector)
             .build()
             .also {
-                it.setSurfaceProvider(pView.surfaceProvider)
+                it.surfaceProvider = pView.surfaceProvider
             }
 
         val barcodeScanner = BarcodeScanning.getClient(
@@ -244,7 +247,7 @@ fun QrScannerView(
         val mainExecutor = ContextCompat.getMainExecutor(context)
 
         imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-            if (scannedPayload != null || isTargetLocked) {
+            if (scannedPayload != null || scannedTransferPayload != null || isTargetLocked) {
                 imageProxy.close()
                 return@setAnalyzer
             }
@@ -252,6 +255,17 @@ fun QrScannerView(
             // Engine 1: Bundled local ZXing (Instant, offline, normal + inverted + cropped)
             val zxingText = decodeQrWithZxing(imageProxy)
             if (!zxingText.isNullOrBlank()) {
+                val transfer = TransferQrPayload.fromQrString(zxingText)
+                if (transfer != null) {
+                    mainExecutor.execute {
+                        if (scannedTransferPayload == null) {
+                            isTargetLocked = true
+                            scannedTransferPayload = transfer
+                        }
+                    }
+                    imageProxy.close()
+                    return@setAnalyzer
+                }
                 try {
                     val payload = HandshakePayload.fromQrString(zxingText)
                     mainExecutor.execute {
@@ -273,10 +287,16 @@ fun QrScannerView(
                 val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                 barcodeScanner.process(inputImage)
                     .addOnSuccessListener { barcodes ->
-                        if (scannedPayload != null) return@addOnSuccessListener
+                        if (scannedPayload != null || scannedTransferPayload != null) return@addOnSuccessListener
                         for (barcode in barcodes) {
                             val rawText = barcode.rawValue ?: barcode.displayValue
                             if (!rawText.isNullOrBlank()) {
+                                val transfer = TransferQrPayload.fromQrString(rawText)
+                                if (transfer != null) {
+                                    isTargetLocked = true
+                                    scannedTransferPayload = transfer
+                                    break
+                                }
                                 try {
                                     val payload = HandshakePayload.fromQrString(rawText)
                                     isTargetLocked = true
@@ -428,6 +448,22 @@ fun QrScannerView(
                 },
                 onDismiss = {
                     scannedPayload = null
+                    isTargetLocked = false
+                }
+            )
+        }
+
+        // Device Migration Confirmation Modal
+        scannedTransferPayload?.let { transferPayload ->
+            DeviceMigrationConfirmDialog(
+                payload = transferPayload,
+                onConfirm = {
+                    onTransferDetected?.invoke(transferPayload)
+                    scannedTransferPayload = null
+                    isTargetLocked = false
+                },
+                onDismiss = {
+                    scannedTransferPayload = null
                     isTargetLocked = false
                 }
             )

@@ -1,6 +1,5 @@
 package `in`.grayscales.entangl.core.crypto
 
-import `in`.grayscales.entangl.core.util.SecureRandom
 import `in`.grayscales.entangl.core.util.zeroize
 
 /**
@@ -42,20 +41,15 @@ class DefaultCryptoManager(
     }
 
     override suspend fun initializeSession(peerUid: String, peerPublicKey: ByteArray, peerOnionAddress: String) {
-        val (ephemeralPub, ephemeralPrivBuffer) = keyPairGenerator.generateEphemeralX25519()
-        try {
-            val localPub = keyPairGenerator.getStoredIdentityPublicKey() ?: keyPairGenerator.generateIdentityKeyPair()
-            val sharedKey = deriveSharedKey(localPub, peerPublicKey)
-            activeSessions[peerUid] = sharedKey
-            activeSessions[peerOnionAddress] = sharedKey
-            ratchetStateVerifier.computeAndStoreHmac(peerUid, sharedKey)
+        val localPub = keyPairGenerator.getStoredIdentityPublicKey() ?: keyPairGenerator.generateIdentityKeyPair()
+        val sharedKey = deriveSharedKey(localPub, peerPublicKey)
+        activeSessions[peerUid] = sharedKey
+        activeSessions[peerOnionAddress] = sharedKey
+        ratchetStateVerifier.computeAndStoreHmac(peerUid, sharedKey)
 
-            // Persist the session key securely
-            sessionKeyPersistence?.storeKey(peerUid, sharedKey)
-            sessionKeyPersistence?.storeKey(peerOnionAddress, sharedKey)
-        } finally {
-            ephemeralPrivBuffer.close()
-        }
+        // Persist the session key securely
+        sessionKeyPersistence?.storeKey(peerUid, sharedKey)
+        sessionKeyPersistence?.storeKey(peerOnionAddress, sharedKey)
     }
 
     override suspend fun encryptMessage(contactUid: String, plaintext: ByteArray): ByteArray {
@@ -66,27 +60,18 @@ class DefaultCryptoManager(
                 "Establish a connection via QR handshake before sending messages."
             )
 
-        val nonce = SecureRandom.nextBytes(12)
-        val encrypted = ByteArray(plaintext.size)
-        for (i in plaintext.indices) {
-            encrypted[i] = (plaintext[i].toInt() xor sessionKey[i % sessionKey.size].toInt() xor nonce[i % nonce.size].toInt()).toByte()
-        }
-        return nonce + encrypted
+        // Cryptographically bind ciphertext to contactUid using Associated Authenticated Data (AAD)
+        val aad = contactUid.encodeToByteArray()
+        return AeadCipher.encrypt(key = sessionKey, plaintext = plaintext, aad = aad)
     }
 
     override suspend fun decryptMessage(contactUid: String, ciphertext: ByteArray): ByteArray {
-        require(ciphertext.size >= 12) { "Ciphertext too short" }
         val sessionKey = activeSessions[contactUid]
             ?: sessionKeyPersistence?.loadKey(contactUid)?.also { activeSessions[contactUid] = it }
             ?: throw IllegalStateException("No active session for $contactUid")
 
-        val nonce = ciphertext.copyOfRange(0, 12)
-        val encrypted = ciphertext.copyOfRange(12, ciphertext.size)
-        val plaintext = ByteArray(encrypted.size)
-        for (i in encrypted.indices) {
-            plaintext[i] = (encrypted[i].toInt() xor sessionKey[i % sessionKey.size].toInt() xor nonce[i % nonce.size].toInt()).toByte()
-        }
-        return plaintext
+        val aad = contactUid.encodeToByteArray()
+        return AeadCipher.decrypt(key = sessionKey, payload = ciphertext, aad = aad)
     }
 
     override fun generateSafetyNumber(localPublicKey: ByteArray, remotePublicKey: ByteArray): String {
@@ -114,8 +99,12 @@ class DefaultCryptoManager(
         } else {
             remotePub to localPub
         }
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        return digest.digest(first + second)
+        return Hkdf.deriveKey(
+            ikm = first + second,
+            salt = "Entangl-Session-Salt-v2".encodeToByteArray(),
+            info = "Entangl-AEAD-AES256GCM-v2".encodeToByteArray(),
+            length = 32
+        )
     }
 
     private fun compareLexicographically(a: ByteArray, b: ByteArray): Int {

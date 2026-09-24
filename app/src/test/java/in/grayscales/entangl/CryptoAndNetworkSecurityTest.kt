@@ -12,7 +12,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -228,5 +227,144 @@ class CryptoAndNetworkSecurityTest {
         // Tamper with new public key
         val tamperedCert = cert.copy(newIdentityPubKey = "fakeKeyBase64")
         assertFalse(SuccessionCertificate.verify(tamperedCert, kpg))
+    }
+
+    // =========================================================================
+    // 6. Device Migration & Succession Tests
+    // =========================================================================
+
+    @Test
+    fun testTransferQrPayloadSerialization() {
+        val payload = `in`.grayscales.entangl.domain.model.TransferQrPayload(
+            ip = "192.168.1.50",
+            port = 45678,
+            ephPub = "base64EphPublicKeyDataHere==",
+            authToken = "authSecretToken12345",
+            senderUid = "node-alpha-12345"
+        )
+
+        val qrString = payload.toQrString()
+        assertTrue("QR string must have entangl-transfer URI scheme", qrString.startsWith("entangl-transfer://"))
+
+        val parsed = `in`.grayscales.entangl.domain.model.TransferQrPayload.fromQrString(qrString)
+        assertNotNull("Parsed payload must not be null", parsed)
+        assertEquals(payload.ip, parsed!!.ip)
+        assertEquals(payload.port, parsed.port)
+        assertEquals(payload.ephPub, parsed.ephPub)
+        assertEquals(payload.authToken, parsed.authToken)
+        assertEquals(payload.senderUid, parsed.senderUid)
+
+        // Invalid QR string rejection
+        val invalidParsed = `in`.grayscales.entangl.domain.model.TransferQrPayload.fromQrString("invalid-qr-data")
+        org.junit.Assert.assertNull(invalidParsed)
+    }
+
+    @Test
+    fun testTransferTunnelEcdhHkdfDerivation() {
+        val kpg = KeyPairGenerator()
+
+        // Old Device generates ephemeral keypair
+        val (ephPubA, ephPrivA) = kpg.generateEphemeralX25519()
+
+        // New Device generates ephemeral keypair
+        val (ephPubB, ephPrivB) = kpg.generateEphemeralX25519()
+
+        // Both perform ECDH key agreement
+        val secretA = kpg.computeX25519KeyAgreement(ephPrivA, ephPubB)
+        val secretB = kpg.computeX25519KeyAgreement(ephPrivB, ephPubA)
+
+        assertArrayEquals("ECDH shared secret must match symmetrically", secretA, secretB)
+
+        // Derive 32-byte AES-256-GCM tunnel key via HKDF
+        val salt = "Entangl-Local-Transfer-v1".encodeToByteArray()
+        val info = "P2P-Tunnel-Key".encodeToByteArray()
+
+        val tunnelKeyA = Hkdf.deriveKey(secretA, salt, info, 32)
+        val tunnelKeyB = Hkdf.deriveKey(secretB, salt, info, 32)
+
+        assertArrayEquals("Derived tunnel keys must match", tunnelKeyA, tunnelKeyB)
+        assertEquals("Tunnel key length must be 32 bytes for AES-256", 32, tunnelKeyA.size)
+    }
+
+    @Test
+    fun testDeviceMigrationPayloadCborEncryption() {
+        val kpg = KeyPairGenerator()
+        val oldPub = kpg.getStoredIdentityPublicKey() ?: kpg.generateIdentityKeyPair()
+        val newPub = ByteArray(32) { 0x5A }
+
+        val cert = SuccessionCertificate.create(
+            oldIdentityPubKey = oldPub,
+            newIdentityPubKey = newPub,
+            keyPairGenerator = kpg
+        )
+
+        val contacts = listOf(
+            `in`.grayscales.entangl.core.crypto.ContactMigrationItem(
+                uid = "peer-alice",
+                publicKey = ByteArray(32) { 0x11 },
+                onionAddress = "alice123456789.onion",
+                safetyNumber = "12345-67890",
+                displayName = "Alice",
+                createdAt = 1000000L,
+                lastSeenAt = 2000000L,
+                isAccepted = true
+            )
+        )
+
+        val messages = listOf(
+            `in`.grayscales.entangl.core.crypto.MessageMigrationItem(
+                id = "msg-001",
+                contactUid = "peer-alice",
+                ciphertext = "encrypted-bytes".encodeToByteArray(),
+                direction = 1,
+                status = 2,
+                timestamp = 1500000L,
+                selfDestructAt = null
+            )
+        )
+
+        val sessionKeys = listOf(
+            `in`.grayscales.entangl.core.crypto.SessionKeyMigrationItem(
+                contactUid = "peer-alice",
+                sessionKey = ByteArray(32) { 0x99.toByte() }
+            )
+        )
+
+        val migrationPayload = `in`.grayscales.entangl.core.crypto.DeviceMigrationPayload(
+            senderUid = "my-local-uid",
+            contacts = contacts,
+            messages = messages,
+            sessionKeys = sessionKeys,
+            certificate = cert
+        )
+
+        // 1. CBOR Serialization
+        val cborBytes = migrationPayload.toCbor()
+        assertTrue("CBOR payload must not be empty", cborBytes.isNotEmpty())
+
+        // 2. AES-256-GCM AEAD Tunnel Encryption
+        val tunnelKey = ByteArray(32) { 0x42 }
+        val aad = "entangl-device-migration-v1".encodeToByteArray()
+        val encrypted = AeadCipher.encrypt(tunnelKey, cborBytes, aad)
+
+        assertTrue("Encrypted size must include IV + ciphertext + GCM tag", encrypted.size > cborBytes.size)
+
+        // 3. AES-256-GCM AEAD Tunnel Decryption
+        val decryptedCbor = AeadCipher.decrypt(tunnelKey, encrypted, aad)
+        assertArrayEquals(cborBytes, decryptedCbor)
+
+        // 4. CBOR Deserialization
+        val restored = `in`.grayscales.entangl.core.crypto.DeviceMigrationPayload.fromCbor(decryptedCbor)
+        assertNotNull("Restored payload must not be null", restored)
+        assertEquals("my-local-uid", restored!!.senderUid)
+        assertEquals(1, restored.contacts.size)
+        assertEquals("peer-alice", restored.contacts[0].uid)
+        assertEquals("Alice", restored.contacts[0].displayName)
+        assertEquals(1, restored.messages.size)
+        assertEquals("msg-001", restored.messages[0].id)
+        assertEquals(1, restored.sessionKeys.size)
+        assertEquals("peer-alice", restored.sessionKeys[0].contactUid)
+        assertNotNull(restored.certificate)
+        assertTrue(SuccessionCertificate.verify(restored.certificate!!, kpg))
     }
 }

@@ -55,7 +55,7 @@ data class SuccessionCertificate(
                 val payload = oldPub + newPub + certificate.timestampMs.toString().encodeToByteArray() + nonce
                 
                 return keyPairGenerator.verify(oldPub, payload, sig)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 return false
             }
         }
@@ -67,7 +67,7 @@ data class SuccessionCertificate(
         fun fromByteArray(bytes: ByteArray): SuccessionCertificate? {
             return try {
                 Cbor.decodeFromByteArray(serializer(), bytes)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }
@@ -79,7 +79,7 @@ data class SuccessionCertificate(
         fun fromEncodedString(str: String): SuccessionCertificate? {
             return try {
                 fromByteArray(Base64.decode(str))
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }

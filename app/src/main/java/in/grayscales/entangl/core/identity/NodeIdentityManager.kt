@@ -1,6 +1,7 @@
 package `in`.grayscales.entangl.core.identity
 
 import android.content.Context
+import androidx.core.content.edit
 import java.util.UUID
 
 /**
@@ -16,7 +17,7 @@ class NodeIdentityManager(context: Context) {
             var uid = prefs.getString(KEY_UID, null)
             if (uid == null) {
                 uid = "node-" + UUID.randomUUID().toString().replace("-", "").take(12)
-                prefs.edit().putString(KEY_UID, uid).apply()
+                prefs.edit { putString(KEY_UID, uid) }
             }
             return uid
         }
@@ -25,8 +26,8 @@ class NodeIdentityManager(context: Context) {
         get() {
             var onion = prefs.getString(KEY_ONION, null)
             if (onion == null) {
-                onion = "entangl" + UUID.randomUUID().toString().replace("-", "") + "onion.onion"
-                prefs.edit().putString(KEY_ONION, onion).apply()
+                onion = "mesh-" + UUID.randomUUID().toString().replace("-", "").take(16) + ".entangl.net"
+                prefs.edit { putString(KEY_ONION, onion) }
             }
             return onion
         }
@@ -36,9 +37,9 @@ class NodeIdentityManager(context: Context) {
         set(value) {
             val sanitized = value?.trim()?.take(MAX_USERNAME_LENGTH)
             if (sanitized.isNullOrEmpty()) {
-                prefs.edit().remove(KEY_USERNAME).apply()
+                prefs.edit { remove(KEY_USERNAME) }
             } else {
-                prefs.edit().putString(KEY_USERNAME, sanitized).apply()
+                prefs.edit { putString(KEY_USERNAME, sanitized) }
             }
         }
 

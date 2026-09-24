@@ -2,6 +2,8 @@ package `in`.grayscales.entangl.data.repository
 
 import android.util.Log
 import `in`.grayscales.entangl.core.crypto.CryptoManager
+import `in`.grayscales.entangl.core.crypto.KeyPairGenerator
+import `in`.grayscales.entangl.core.crypto.SuccessionCertificate
 import `in`.grayscales.entangl.core.identity.NodeIdentityManager
 import `in`.grayscales.entangl.data.local.dao.ContactDao
 import `in`.grayscales.entangl.data.local.dao.MessageDao
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Android implementation of [MessageRepository].
@@ -32,7 +35,8 @@ class MessageRepositoryImpl(
     private val cryptoManager: CryptoManager,
     private val networkTransport: NetworkTransport,
     private val nodeIdentityManager: NodeIdentityManager,
-    private val notificationManager: EntanglNotificationManager
+    private val notificationManager: EntanglNotificationManager,
+    private val keyPairGenerator: KeyPairGenerator? = null
 ) : MessageRepository {
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -62,9 +66,92 @@ class MessageRepositoryImpl(
     private suspend fun handleIncomingEnvelope(envelope: TransportEnvelope) {
         val senderUid = envelope.senderUid
         if (senderUid.isBlank()) return
-        Log.i("MessageRepository", "handleIncomingEnvelope: type=${envelope.type}, senderUid=$senderUid, username='${envelope.senderUsername}'")
+
+        // Authenticate envelope cryptographic signature (SEC-NET-04)
+        val kpg = keyPairGenerator
+        if (kpg != null) {
+            if (envelope.signature.isEmpty()) {
+                if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                    Log.w("MessageRepository", "Dropping unsigned envelope ${envelope.id} (type=${envelope.type}) from $senderUid")
+                }
+                return
+            }
+
+            val senderPub = envelope.senderIdentityPub
+            if (senderPub.isEmpty()) {
+                if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                    Log.w("MessageRepository", "Dropping envelope ${envelope.id} with empty sender public key")
+                }
+                return
+            }
+
+            val existingContact = contactDao.getByUid(senderUid)
+            if (existingContact != null && existingContact.publicKey.isNotEmpty()) {
+                if (envelope.type != TransportEnvelope.TYPE_IDENTITY_ROTATION && !existingContact.publicKey.contentEquals(senderPub)) {
+                    if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                        Log.e("MessageRepository", "Spoofing rejected: Sender public key does not match trusted key for $senderUid")
+                    }
+                    return
+                }
+            }
+
+            val isSignatureValid = try {
+                kpg.verify(
+                    publicKey = senderPub,
+                    data = envelope.getCanonicalData(),
+                    signature = envelope.signature
+                )
+            } catch (_: Exception) {
+                false
+            }
+
+            if (!isSignatureValid) {
+                if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                    Log.e("MessageRepository", "Signature verification FAILED for envelope ${envelope.id} from $senderUid — packet dropped!")
+                }
+                return
+            }
+        }
+
+        if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+            Log.d("MessageRepository", "handleIncomingEnvelope: type=${envelope.type}, senderUid=$senderUid")
+        }
+
+        // Anti-replay: skip if already processed and stored in database
+        if (envelope.type == TransportEnvelope.TYPE_MESSAGE && messageDao.existsById(envelope.id)) {
+            if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                Log.d("MessageRepository", "Skipping already persisted message ${envelope.id}")
+            }
+            return
+        }
 
         when (envelope.type) {
+            TransportEnvelope.TYPE_IDENTITY_ROTATION -> {
+                val cert = SuccessionCertificate.fromByteArray(envelope.ciphertext)
+                if (cert != null && kpg != null && SuccessionCertificate.verify(cert, kpg)) {
+                    val existing = contactDao.getByUid(senderUid)
+                    if (existing != null) {
+                        try {
+                            val oldPubBytes = kotlin.io.encoding.Base64.decode(cert.oldIdentityPubKey)
+                            if (existing.publicKey.isEmpty() || existing.publicKey.contentEquals(oldPubBytes)) {
+                                val newPubBytes = kotlin.io.encoding.Base64.decode(cert.newIdentityPubKey)
+                                val updated = existing.copy(publicKey = newPubBytes)
+                                contactDao.insertOrUpdate(updated)
+                                cryptoManager.initializeSession(senderUid, newPubBytes, existing.onionAddress)
+                                if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                                    Log.i("MessageRepository", "Successfully rotated key for $senderUid via verified SuccessionCertificate")
+                                }
+                            } else {
+                                if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+                                    Log.w("MessageRepository", "Ignored rotation cert: old key mismatch for $senderUid")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MessageRepository", "Failed updating key for identity rotation: ${e.message}")
+                        }
+                    }
+                }
+            }
             TransportEnvelope.TYPE_SCAN_PING -> {
                 val displayName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
                 val existing = contactDao.getByUid(senderUid)
@@ -263,7 +350,7 @@ class MessageRepositoryImpl(
             var sent = false
             for (attempt in 0 until MAX_SEND_RETRIES) {
                 if (attempt > 0) {
-                    kotlinx.coroutines.delay(RETRY_BASE_DELAY_MS * (1L shl (attempt - 1)))
+                    kotlinx.coroutines.delay((RETRY_BASE_DELAY_MS * (1L shl (attempt - 1))).milliseconds)
                 }
                 sent = networkTransport.sendEnvelope(envelope)
                 if (sent) break

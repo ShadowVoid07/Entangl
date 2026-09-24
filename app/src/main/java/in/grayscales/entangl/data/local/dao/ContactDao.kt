@@ -19,6 +19,9 @@ interface ContactDao {
     @Query("SELECT * FROM contacts ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<ContactEntity>>
 
+    @Query("SELECT * FROM contacts ORDER BY createdAt DESC")
+    suspend fun getAll(): List<ContactEntity>
+
     @Query("DELETE FROM contacts WHERE uid = :uid")
     suspend fun deleteByUid(uid: String)
 

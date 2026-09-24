@@ -1,5 +1,6 @@
 package `in`.grayscales.entangl.data.network
 
+import `in`.grayscales.entangl.core.crypto.KeyPairGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +19,7 @@ import java.net.URL
 import java.security.MessageDigest
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Data packet transported across online devices.
@@ -33,13 +35,29 @@ data class TransportEnvelope(
     val recipientUid: String,
     val ciphertext: ByteArray,
     val timestamp: Long = System.currentTimeMillis(),
-    val senderUsername: String = ""
+    val senderUsername: String = "",
+    val signature: ByteArray = ByteArray(0)
 ) {
+    /**
+     * Canonical binary representation of envelope data for cryptographic signature verification.
+     * Prevents forgery of headers, sender/recipient IDs, or tampering with the ciphertext.
+     */
+    fun getCanonicalData(): ByteArray {
+        val timestampBytes = ByteArray(8) { i -> (timestamp ushr (56 - i * 8)).toByte() }
+        return id.encodeToByteArray() +
+            type.encodeToByteArray() +
+            senderUid.encodeToByteArray() +
+            recipientUid.encodeToByteArray() +
+            timestampBytes +
+            ciphertext
+    }
+
     companion object {
         const val TYPE_MESSAGE = "MESSAGE"
         const val TYPE_DELIVERY_ACK = "DELIVERY_ACK"
         const val TYPE_SCAN_PING = "SCAN_PING"
         const val TYPE_SCAN_ACCEPT = "SCAN_ACCEPT"
+        const val TYPE_IDENTITY_ROTATION = "IDENTITY_ROTATION"
 
         fun fromJson(jsonStr: String): TransportEnvelope? {
             return try {
@@ -53,6 +71,8 @@ data class TransportEnvelope(
                 val pubBytes = if (pubStr.isNotEmpty()) Base64.decode(pubStr) else ByteArray(0)
                 val cipherStr = extractJsonField(jsonStr, "ciphertext") ?: ""
                 val cipherBytes = if (cipherStr.isNotEmpty()) Base64.decode(cipherStr) else ByteArray(0)
+                val sigStr = extractJsonField(jsonStr, "senderSig") ?: ""
+                val sigBytes = if (sigStr.isNotEmpty()) Base64.decode(sigStr) else ByteArray(0)
                 val timestamp = extractJsonLong(jsonStr, "timestamp") ?: System.currentTimeMillis()
 
                 TransportEnvelope(
@@ -64,9 +84,10 @@ data class TransportEnvelope(
                     recipientUid = recipientUid,
                     ciphertext = cipherBytes,
                     timestamp = timestamp,
-                    senderUsername = senderUsername
+                    senderUsername = senderUsername,
+                    signature = sigBytes
                 )
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }
@@ -134,6 +155,7 @@ data class TransportEnvelope(
             append("\"senderOnion\":\"").append(escapeJson(senderOnion)).append("\",")
             append("\"recipientUid\":\"").append(escapeJson(recipientUid)).append("\",")
             append("\"ciphertext\":\"").append(Base64.encode(ciphertext)).append("\",")
+            append("\"senderSig\":\"").append(Base64.encode(signature)).append("\",")
             append("\"timestamp\":").append(timestamp)
             append("}")
         }
@@ -153,6 +175,7 @@ data class TransportEnvelope(
         if (senderOnion != other.senderOnion) return false
         if (recipientUid != other.recipientUid) return false
         if (!ciphertext.contentEquals(other.ciphertext)) return false
+        if (!signature.contentEquals(other.signature)) return false
         if (timestamp != other.timestamp) return false
 
         return true
@@ -167,6 +190,7 @@ data class TransportEnvelope(
         result = 31 * result + senderOnion.hashCode()
         result = 31 * result + recipientUid.hashCode()
         result = 31 * result + ciphertext.contentHashCode()
+        result = 31 * result + signature.contentHashCode()
         result = 31 * result + timestamp.hashCode()
         return result
     }
@@ -177,7 +201,25 @@ data class TransportEnvelope(
  * Relays Double-Ratchet encrypted payloads across devices on cellular or Wi-Fi networks
  * using an anonymous pub-sub inbox topic.
  */
-class NetworkTransport {
+class NetworkTransport(
+    private val keyPairGenerator: KeyPairGenerator? = null
+) {
+
+    /**
+     * Signs an envelope with the device's Keystore identity key if it is not already signed.
+     */
+    fun signEnvelope(envelope: TransportEnvelope): TransportEnvelope {
+        val kpg = keyPairGenerator ?: return envelope
+        val identityPub = if (envelope.senderIdentityPub.isNotEmpty()) {
+            envelope.senderIdentityPub
+        } else {
+            kpg.getStoredIdentityPublicKey() ?: ByteArray(0)
+        }
+        val target = if (envelope.senderIdentityPub.isEmpty()) envelope.copy(senderIdentityPub = identityPub) else envelope
+        val canonical = target.getCanonicalData()
+        val sig = kpg.sign(canonical)
+        return target.copy(signature = sig)
+    }
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val listeningJobs = mutableListOf<Job>()
@@ -229,7 +271,7 @@ class NetworkTransport {
                             log("Transport stream encounter on $relay: ${e.message}")
                         }
                         if (isActive && isRunning) {
-                            delay(2500L) // Graceful pause before reconnecting stream for this relay
+                            delay(2500.milliseconds) // Graceful pause before reconnecting stream for this relay
                         }
                     }
                 }
@@ -258,8 +300,9 @@ class NetworkTransport {
      * to eliminate cross-relay partition / split-brain.
      */
     suspend fun sendEnvelope(envelope: TransportEnvelope): Boolean = withContext(Dispatchers.IO) {
-        val topic = getTopicForUid(envelope.recipientUid)
-        val payloadJson = envelope.toJson()
+        val signedEnvelope = if (envelope.signature.isEmpty()) signEnvelope(envelope) else envelope
+        val topic = getTopicForUid(signedEnvelope.recipientUid)
+        val payloadJson = signedEnvelope.toJson()
 
         log("Broadcasting envelope ${envelope.id} (type=${envelope.type}) to ${RELAY_SERVERS.size} relays for topic $topic")
 
@@ -463,16 +506,19 @@ class NetworkTransport {
 
     fun getTopicForUid(uid: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
+        digest.update("Entangl-Topic-Blind-v2".toByteArray())
         val hash = digest.digest(uid.toByteArray())
         val hex = hash.joinToString("") { "%02x".format(it) }
-        return "entangl-box-" + hex.take(16)
+        return "entangl-v2-" + hex.take(24)
     }
 
     private fun log(msg: String) {
-        try {
-            android.util.Log.i("NetworkTransport", msg)
-        } catch (_: Throwable) {
-            println("[NetworkTransport] $msg")
+        if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
+            try {
+                android.util.Log.d("NetworkTransport", msg)
+            } catch (_: Throwable) {
+                // Silently swallow in tests/non-android environments
+            }
         }
     }
 
