@@ -24,10 +24,89 @@ Neither user can send a message until both parties have physically scanned each 
 ## Core Features
 
 * **Zero Trust Discovery:** Eradicate spam, unsolicited requests, and bulk scraping by enforcing in-person or out-of-band mutual scanning.
-* **True Peer-to-Peer (P2P) Architecture:** Communicate directly device-to-device via Tor Onion Services (`arti`). Messages are never stored on any backend or third-party infrastructure.
+* **True Peer-to-Peer (P2P) Architecture:** Communicate directly device-to-device via local Wi-Fi discovery and Tor Onion Services (`arti`). Messages are never stored on any backend or third-party infrastructure.
 * **Post-Quantum End-to-End Encryption:** Utilizes a hybrid **PQXDH (X25519 + ML-KEM-768 Kyber)** ratchet via `libsignal-client` to defend against Store Now, Decrypt Later (SNDL) attacks.
 * **Two-Layer Encryption Model:** Messages are encrypted via the Double Ratchet Protocol (Forward Secrecy, Post-Compromise Security), and the encrypted payloads are then transported over Tor (anonymity and transport encryption).
-* **Strict On-Device Security:** Keys are kept in native memory and zeroed out explicitly. State integrity is backed by Android Keystore. Includes defenses against tapjacking, ADB backups, and memory scraping.
+* **Cryptographic Identity & Visual Customization:** Choose your secret codename and custom `#RRGGBB` profile color with live HSV color picker, cryptographically bound and signed via Ed25519 keys.
+* **Strict On-Device Security:** Keys are kept in native memory buffers (`NativeKeyBuffer`) and zeroed out explicitly. State integrity is backed by Android Keystore. Includes defenses against tapjacking, ADB backups, screenshots (`FLAG_SECURE`), and memory scraping.
+
+---
+
+## How It Works for Users
+
+Entangl eliminates central servers, phone numbers, and cloud databases. Here is how it works from the user's perspective:
+
+### 1. User Journey Overview
+
+![User Journey Flowchart](docs/user_journey_flowchart.jpg)
+
+> **Stage 1 — Identity:** No phone number or email. You pick a codename and color, and cryptographic keys are generated inside your phone's hardware security chip.
+>
+> **Stage 2 — Pairing:** You and your contact physically scan each other's QR codes. Both phones verify a matching 60-digit Safety Number before unlocking the chat.
+>
+> **Stage 3 — Messaging:** Messages route over local Wi-Fi (zero latency) or Tor hidden services (full IP anonymity), encrypted with a hybrid post-quantum ratchet (ML-KEM-768 Kyber + X25519).
+>
+> **Stage 4 — Privacy:** Everything stored in SQLCipher encrypted database. Lockscreen notifications are hidden (`VISIBILITY_SECRET`). Keys are zeroed from memory after use.
+
+### 2. The In-Person Pairing Experience
+
+Connecting with a contact takes under 15 seconds and requires zero network access:
+
+![Pairing Sequence Diagram](docs/pairing_sequence.jpg)
+
+<details>
+<summary>View Mermaid source (for GitHub rendering)</summary>
+
+```mermaid
+graph TD
+    A[Install Entangl] --> B[Choose Codename]
+    B --> C[Pick Profile Color]
+    C --> D[Hardware Keys Generated]
+    D --> E[Show Your QR Code]
+    E --> F[Friend Scans Your QR]
+    F --> G[Friend Shows Their QR]
+    G --> H[You Scan Their QR]
+    H --> I[Verify Safety Number]
+    I --> J{Connection Route}
+    J -->|Local WiFi| K[Direct P2P Socket]
+    J -->|Internet| L[Tor Onion Circuit]
+    K --> M[Post-Quantum Encrypted Chat]
+    L --> M
+    M --> N[Encrypted Local Database]
+    N --> O[Zero-Leak Notifications]
+    O --> P[Auto-Destruct Messages]
+```
+
+```mermaid
+sequenceDiagram
+    participant Alice
+    participant Bob
+    Note over Alice: Picks codename and color
+    Alice->>Alice: Displays rolling QR-1
+    Note over Alice,Bob: Physical meeting, no internet needed
+    Bob->>Alice: Scans QR-1 with camera
+    Note over Bob: Verifies signature, extracts identity
+    Bob->>Bob: Displays confirmation QR-2
+    Alice->>Bob: Scans QR-2 with camera
+    Note over Alice: Verifies signature and nonce match
+    Note over Alice,Bob: Both see matching 60-digit Safety Number
+    Note over Alice,Bob: Chat channel unlocked!
+```
+
+</details>
+
+### 3. Why This Protects You
+
+| What Traditional Apps Do | How Entangl Protects You |
+| :--- | :--- |
+| **Phone number / email required** | **Zero accounts.** Your identity is a local cryptographic key pair generated inside your phone's hardware security module (StrongBox). |
+| **Centralized servers hold messages** | **Zero servers.** All messages travel directly peer-to-peer via local Wi-Fi sockets or encrypted Tor Onion hidden services. |
+| **Contact list scraped into the cloud** | **Zero directory.** Contacts are only established when two physical devices scan each other. Nobody can discover your contacts. |
+| **Lockscreen notifications show text & senders** | **Zero-leak notifications.** Notifications use `VISIBILITY_SECRET`. The lockscreen stays blank, and alerts are generic without previews. |
+| **Vulnerable to future quantum computers** | **Post-quantum secure.** Over-the-air ratchet exchanges use **PQXDH (ML-KEM-768 Kyber + X25519)**, neutralizing Store Now, Decrypt Later attacks. |
+| **Screen capture & memory snooping** | **Hardened on-device.** Protected with `FLAG_SECURE`, anti-tapjacking view filters, and instant native memory zeroization (`NativeKeyBuffer`). |
+
+---
 
 ## Getting Started
 
