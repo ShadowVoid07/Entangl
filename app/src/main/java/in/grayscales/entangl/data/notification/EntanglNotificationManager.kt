@@ -37,20 +37,18 @@ class EntanglNotificationManager(
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications for incoming end-to-end encrypted quantum messages"
-                lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET
-                enableLights(true)
-                lightColor = 0xFF00F0FF.toInt() // Quantum Cyan LED
-                enableVibration(true)
-            }
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Notifications for incoming end-to-end encrypted quantum messages"
+            lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET
+            enableLights(true)
+            lightColor = 0xFF00F0FF.toInt() // Quantum Cyan LED
+            enableVibration(true)
         }
+        notificationManager.createNotificationChannel(channel)
     }
 
     /**

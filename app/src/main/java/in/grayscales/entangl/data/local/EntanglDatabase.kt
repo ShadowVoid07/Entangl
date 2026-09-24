@@ -3,6 +3,7 @@ package `in`.grayscales.entangl.data.local
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import androidx.core.content.edit
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -19,12 +20,9 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
-
 @Database(
     entities = [ContactEntity::class, MessageEntity::class],
-    version = 3,
+    version = 1,
     exportSchema = false
 )
 @TypeConverters(CryptoTypeConverters::class)
@@ -37,26 +35,6 @@ abstract class EntanglDatabase : RoomDatabase() {
         private const val DB_NAME = "entangl_vault.db"
         private const val KEYSTORE_ALIAS = "entangl_sqlcipher_master_key"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE contacts ADD COLUMN isAccepted INTEGER NOT NULL DEFAULT 1")
-            }
-        }
-
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                // Correct any contacts with 'Pending' reciprocal verification that lack an explicit acceptance record
-                db.execSQL("""
-                    UPDATE contacts 
-                    SET isAccepted = 0 
-                    WHERE safetyNumber LIKE 'Pending%' 
-                      AND uid NOT IN (
-                          SELECT contactUid FROM messages WHERE id LIKE 'accept-%'
-                      )
-                """.trimIndent())
-            }
-        }
 
         @Volatile
         private var INSTANCE: EntanglDatabase? = null
@@ -77,7 +55,6 @@ abstract class EntanglDatabase : RoomDatabase() {
                 DB_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigration(true)
                 .build()
         }
@@ -126,10 +103,10 @@ abstract class EntanglDatabase : RoomDatabase() {
             val encryptedPassphrase = cipher.doFinal(rawPassphrase)
             val iv = cipher.iv
 
-            prefs.edit()
-                .putString("encrypted_passphrase", android.util.Base64.encodeToString(encryptedPassphrase, android.util.Base64.NO_WRAP))
-                .putString("passphrase_iv", android.util.Base64.encodeToString(iv, android.util.Base64.NO_WRAP))
-                .apply()
+            prefs.edit {
+                putString("encrypted_passphrase", android.util.Base64.encodeToString(encryptedPassphrase, android.util.Base64.NO_WRAP))
+                putString("passphrase_iv", android.util.Base64.encodeToString(iv, android.util.Base64.NO_WRAP))
+            }
 
             return rawPassphrase
         }

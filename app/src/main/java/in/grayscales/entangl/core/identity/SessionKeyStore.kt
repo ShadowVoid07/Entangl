@@ -2,6 +2,7 @@ package `in`.grayscales.entangl.core.identity
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import `in`.grayscales.entangl.core.crypto.DefaultCryptoManager
@@ -37,7 +38,7 @@ class SessionKeyStore(context: Context) : DefaultCryptoManager.SessionKeyPersist
      */
     override fun storeKey(contactUid: String, sessionKey: ByteArray) {
         val encoded = Base64.encode(sessionKey)
-        prefs.edit().putString(keyForUid(contactUid), encoded).apply()
+        prefs.edit { putString(keyForUid(contactUid), encoded) }
     }
 
     /**
@@ -57,7 +58,7 @@ class SessionKeyStore(context: Context) : DefaultCryptoManager.SessionKeyPersist
      * Delete the session key for a contact UID.
      */
     override fun deleteKey(contactUid: String) {
-        prefs.edit().remove(keyForUid(contactUid)).apply()
+        prefs.edit { remove(keyForUid(contactUid)) }
     }
 
     /**

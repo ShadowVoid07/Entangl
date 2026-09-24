@@ -146,7 +146,8 @@ class LocalTransferManager(
                                 displayName = it.displayName,
                                 createdAt = it.createdAt,
                                 lastSeenAt = it.lastSeenAt,
-                                isAccepted = it.isAccepted
+                                isAccepted = it.isAccepted,
+                                profileColor = it.profileColor
                             )
                         }
 
@@ -171,7 +172,9 @@ class LocalTransferManager(
                             contacts = contacts,
                             messages = messages,
                             sessionKeys = sessionKeys,
-                            certificate = certificate
+                            certificate = certificate,
+                            localUsername = nodeIdentityManager.username,
+                            localProfileColor = nodeIdentityManager.profileColor
                         )
 
                         // 6. Encrypt payload with AES-256-GCM
@@ -300,7 +303,8 @@ class LocalTransferManager(
                                     displayName = c.displayName,
                                     createdAt = c.createdAt,
                                     lastSeenAt = c.lastSeenAt,
-                                    isAccepted = c.isAccepted
+                                    isAccepted = c.isAccepted,
+                                    profileColor = c.profileColor
                                 )
                             )
                         }
@@ -324,6 +328,10 @@ class LocalTransferManager(
                         for (sk in payload.sessionKeys) {
                             sessionKeyStore.storeKey(sk.contactUid, sk.sessionKey)
                         }
+
+                        // Restore local profile styling if provided
+                        payload.localUsername?.let { if (it.isNotBlank()) nodeIdentityManager.username = it }
+                        payload.localProfileColor?.let { if (it.isNotBlank()) nodeIdentityManager.profileColor = it }
 
                         // 9. Send success ACK
                         dos.writeUTF("ACK_SUCCESS")

@@ -36,6 +36,7 @@ data class TransportEnvelope(
     val ciphertext: ByteArray,
     val timestamp: Long = System.currentTimeMillis(),
     val senderUsername: String = "",
+    val senderProfileColor: String = "",
     val signature: ByteArray = ByteArray(0)
 ) {
     /**
@@ -66,6 +67,7 @@ data class TransportEnvelope(
                 val type = extractJsonField(jsonStr, "type") ?: TYPE_MESSAGE
                 val senderUid = extractJsonField(jsonStr, "senderUid") ?: ""
                 val senderUsername = extractJsonField(jsonStr, "senderUsername") ?: ""
+                val senderProfileColor = extractJsonField(jsonStr, "senderProfileColor") ?: ""
                 val senderOnion = extractJsonField(jsonStr, "senderOnion") ?: ""
                 val pubStr = extractJsonField(jsonStr, "senderPub") ?: ""
                 val pubBytes = if (pubStr.isNotEmpty()) Base64.decode(pubStr) else ByteArray(0)
@@ -85,6 +87,7 @@ data class TransportEnvelope(
                     ciphertext = cipherBytes,
                     timestamp = timestamp,
                     senderUsername = senderUsername,
+                    senderProfileColor = senderProfileColor,
                     signature = sigBytes
                 )
             } catch (_: Exception) {
@@ -151,6 +154,7 @@ data class TransportEnvelope(
             append("\"type\":\"").append(escapeJson(type)).append("\",")
             append("\"senderUid\":\"").append(escapeJson(senderUid)).append("\",")
             append("\"senderUsername\":\"").append(escapeJson(senderUsername)).append("\",")
+            append("\"senderProfileColor\":\"").append(escapeJson(senderProfileColor)).append("\",")
             append("\"senderPub\":\"").append(Base64.encode(senderIdentityPub)).append("\",")
             append("\"senderOnion\":\"").append(escapeJson(senderOnion)).append("\",")
             append("\"recipientUid\":\"").append(escapeJson(recipientUid)).append("\",")
@@ -171,6 +175,7 @@ data class TransportEnvelope(
         if (type != other.type) return false
         if (senderUid != other.senderUid) return false
         if (senderUsername != other.senderUsername) return false
+        if (senderProfileColor != other.senderProfileColor) return false
         if (!senderIdentityPub.contentEquals(other.senderIdentityPub)) return false
         if (senderOnion != other.senderOnion) return false
         if (recipientUid != other.recipientUid) return false
@@ -186,6 +191,7 @@ data class TransportEnvelope(
         result = 31 * result + type.hashCode()
         result = 31 * result + senderUid.hashCode()
         result = 31 * result + senderUsername.hashCode()
+        result = 31 * result + senderProfileColor.hashCode()
         result = 31 * result + senderIdentityPub.contentHashCode()
         result = 31 * result + senderOnion.hashCode()
         result = 31 * result + recipientUid.hashCode()
@@ -383,13 +389,15 @@ class NetworkTransport(
         localUid: String,
         localUsername: String,
         localIdentityPub: ByteArray,
-        localOnion: String
+        localOnion: String,
+        localProfileColor: String = ""
     ): Boolean {
         val envelope = TransportEnvelope(
             id = java.util.UUID.randomUUID().toString(),
             type = TransportEnvelope.TYPE_SCAN_PING,
             senderUid = localUid,
             senderUsername = localUsername,
+            senderProfileColor = localProfileColor,
             senderIdentityPub = localIdentityPub,
             senderOnion = localOnion,
             recipientUid = recipientUid,
@@ -406,13 +414,15 @@ class NetworkTransport(
         localUid: String,
         localUsername: String,
         localIdentityPub: ByteArray = ByteArray(0),
-        localOnion: String = ""
+        localOnion: String = "",
+        localProfileColor: String = ""
     ): Boolean {
         val envelope = TransportEnvelope(
             id = java.util.UUID.randomUUID().toString(),
             type = TransportEnvelope.TYPE_SCAN_ACCEPT,
             senderUid = localUid,
             senderUsername = localUsername,
+            senderProfileColor = localProfileColor,
             senderIdentityPub = localIdentityPub,
             senderOnion = localOnion,
             recipientUid = recipientUid,

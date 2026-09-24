@@ -154,6 +154,7 @@ class MessageRepositoryImpl(
             }
             TransportEnvelope.TYPE_SCAN_PING -> {
                 val displayName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
+                val profileColor = envelope.senderProfileColor.ifBlank { null }
                 val existing = contactDao.getByUid(senderUid)
                 val isAlreadyMutuallyVerified = existing != null && !existing.safetyNumber.startsWith("Pending")
                 val isAlreadyAccepted = existing?.isAccepted == true && messageDao.hasAcceptanceNotice(senderUid)
@@ -164,7 +165,8 @@ class MessageRepositoryImpl(
                     publicKey = if (envelope.senderIdentityPub.isNotEmpty()) envelope.senderIdentityPub else existing.publicKey,
                     onionAddress = if (envelope.senderOnion.isNotBlank()) envelope.senderOnion else existing.onionAddress,
                     lastSeenAt = envelope.timestamp,
-                    isAccepted = isAccepted
+                    isAccepted = isAccepted,
+                    profileColor = profileColor ?: existing.profileColor
                 ) ?: ContactEntity(
                     uid = senderUid,
                     publicKey = envelope.senderIdentityPub,
@@ -173,7 +175,8 @@ class MessageRepositoryImpl(
                     displayName = displayName,
                     createdAt = System.currentTimeMillis(),
                     lastSeenAt = envelope.timestamp,
-                    isAccepted = false
+                    isAccepted = false,
+                    profileColor = profileColor
                 )
                 contactDao.insertOrUpdate(contactEntity)
                 notificationManager.showScanPingNotification(senderUid, displayName)
@@ -181,6 +184,7 @@ class MessageRepositoryImpl(
 
             TransportEnvelope.TYPE_SCAN_ACCEPT -> {
                 val peerName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
+                val profileColor = envelope.senderProfileColor.ifBlank { null }
                 val existing = contactDao.getByUid(senderUid)
                 val updatedContact = if (existing != null) {
                     val updatedPub = if (existing.publicKey.isEmpty() && envelope.senderIdentityPub.isNotEmpty()) {
@@ -190,7 +194,8 @@ class MessageRepositoryImpl(
                     existing.copy(
                         displayName = peerName,
                         isAccepted = true,
-                        publicKey = updatedPub
+                        publicKey = updatedPub,
+                        profileColor = profileColor ?: existing.profileColor
                     )
                 } else {
                     ContactEntity(
@@ -201,7 +206,8 @@ class MessageRepositoryImpl(
                         displayName = peerName,
                         createdAt = envelope.timestamp,
                         lastSeenAt = envelope.timestamp,
-                        isAccepted = true
+                        isAccepted = true,
+                        profileColor = profileColor
                     )
                 }
                 contactDao.insertOrUpdate(updatedContact)

@@ -307,7 +307,8 @@ class CryptoAndNetworkSecurityTest {
                 displayName = "Alice",
                 createdAt = 1000000L,
                 lastSeenAt = 2000000L,
-                isAccepted = true
+                isAccepted = true,
+                profileColor = "#00FF9D"
             )
         )
 
@@ -335,7 +336,9 @@ class CryptoAndNetworkSecurityTest {
             contacts = contacts,
             messages = messages,
             sessionKeys = sessionKeys,
-            certificate = cert
+            certificate = cert,
+            localUsername = "QuantumGhost",
+            localProfileColor = "#FF007F"
         )
 
         // 1. CBOR Serialization
@@ -357,9 +360,12 @@ class CryptoAndNetworkSecurityTest {
         val restored = `in`.grayscales.entangl.core.crypto.DeviceMigrationPayload.fromCbor(decryptedCbor)
         assertNotNull("Restored payload must not be null", restored)
         assertEquals("my-local-uid", restored!!.senderUid)
+        assertEquals("QuantumGhost", restored.localUsername)
+        assertEquals("#FF007F", restored.localProfileColor)
         assertEquals(1, restored.contacts.size)
         assertEquals("peer-alice", restored.contacts[0].uid)
         assertEquals("Alice", restored.contacts[0].displayName)
+        assertEquals("#00FF9D", restored.contacts[0].profileColor)
         assertEquals(1, restored.messages.size)
         assertEquals("msg-001", restored.messages[0].id)
         assertEquals(1, restored.sessionKeys.size)

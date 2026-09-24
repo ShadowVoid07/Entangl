@@ -21,10 +21,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +33,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,13 +48,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.R
 import `in`.grayscales.entangl.domain.model.Contact
+import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
-import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
@@ -61,12 +65,17 @@ fun ContactsScreen(
     selectedContactUid: String?,
     onSelectContact: (Contact) -> Unit,
     onDeleteContact: (Contact) -> Unit,
-    onAcceptContact: (Contact) -> Unit = {},
     onScanQr: () -> Unit,
     onShowMyQr: () -> Unit,
     onOpenDashboard: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAcceptContact: (Contact) -> Unit = {},
+    localUsername: String = "",
+    localProfileColor: String = "",
+    onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null
 ) {
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -154,7 +163,110 @@ fun ContactsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Local Node Profile Banner
+        val profileColor = ColorUtils.parseColorOrDefault(localProfileColor, QuantumCyan)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(DarkMatter)
+                .border(1.dp, profileColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .clickable { if (onUpdateProfile != null) showEditProfileDialog = true }
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(profileColor.copy(alpha = 0.18f))
+                            .border(1.5.dp, profileColor, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = localUsername.take(2).uppercase().ifBlank { "ME" },
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = profileColor
+                        )
+                    }
+
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = localUsername.ifBlank { "My Node" },
+                                fontFamily = QuantumMonospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = NeutronWhite
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(DarkMatterVariant)
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = localProfileColor.ifBlank { ColorUtils.DEFAULT_PROFILE_HEX },
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = profileColor
+                                )
+                            }
+                        }
+                        Text(
+                            text = "NODE PROFILE • TAP TO CONFIGURE",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 9.sp,
+                            color = SubatomicGray
+                        )
+                    }
+                }
+
+                if (onUpdateProfile != null) {
+                    IconButton(
+                        onClick = { showEditProfileDialog = true },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Profile",
+                            tint = profileColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showEditProfileDialog && onUpdateProfile != null) {
+            EditProfileDialog(
+                currentUsername = localUsername,
+                currentColorHex = localProfileColor,
+                onDismissRequest = { showEditProfileDialog = false },
+                onSave = { newName, newColor ->
+                    onUpdateProfile(newName, newColor)
+                    showEditProfileDialog = false
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
 
         if (contacts.isEmpty()) {
             // Empty state card
@@ -312,12 +424,14 @@ private fun PendingConnectionCard(
     onAccept: () -> Unit,
     onIgnore: () -> Unit
 ) {
+    val peerColor = contact.profileColor?.let { ColorUtils.parseColorOrNull(it) } ?: QuantumCyan
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(DarkMatterVariant)
-            .border(1.dp, QuantumCyan, RoundedCornerShape(12.dp))
+            .border(1.dp, peerColor, RoundedCornerShape(12.dp))
             .clickable { onClick() }
             .padding(14.dp)
     ) {
@@ -331,26 +445,59 @@ private fun PendingConnectionCard(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(QuantumCyan.copy(alpha = 0.2f))
-                        .border(1.dp, QuantumCyan, CircleShape),
+                        .background(peerColor.copy(alpha = 0.2f))
+                        .border(1.dp, peerColor, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        tint = QuantumCyan,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    val initials = contact.displayName?.trim()?.take(2)?.uppercase()
+                    if (!initials.isNullOrBlank() && initials.length <= 2 && initials.all { it.isLetterOrDigit() }) {
+                        Text(
+                            text = initials,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = peerColor
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = null,
+                            tint = peerColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
                 Column {
                     val name = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
-                    Text(
-                        text = name,
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = NeutronWhite
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = name,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = NeutronWhite
+                        )
+                        val rawColor = contact.profileColor
+                        if (rawColor != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(DarkMatter)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = rawColor,
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = peerColor
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = "Scanned your code and can send messages",
                         fontFamily = QuantumMonospace,
@@ -410,9 +557,11 @@ private fun ContactItem(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val isPending = !contact.isAccepted
     val borderColor = if (isSelected) QuantumCyan else ParticleBorder
     val surfaceColor = if (isSelected) DarkMatterVariant else DarkMatter
-    val isPending = contact.safetyNumber.startsWith("Pending")
+    val peerColor = contact.profileColor?.let { ColorUtils.parseColorOrNull(it) } ?: QuantumCyan
+    val avatarTint = if (isPending) IsotopeMagenta else peerColor
 
     Box(
         modifier = Modifier
@@ -437,31 +586,64 @@ private fun ContactItem(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (isPending) IsotopeMagenta.copy(alpha = 0.2f) else QuantumCyan.copy(alpha = 0.15f))
+                        .background(avatarTint.copy(alpha = 0.18f))
                         .border(
-                            1.dp,
-                            if (isPending) IsotopeMagenta else QuantumCyan,
+                            1.5.dp,
+                            avatarTint,
                             CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = if (isPending) IsotopeMagenta else QuantumCyan,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    val initials = contact.displayName?.trim()?.take(2)?.uppercase()
+                    if (!initials.isNullOrBlank() && initials.length <= 2 && initials.all { it.isLetterOrDigit() }) {
+                        Text(
+                            text = initials,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = avatarTint
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = avatarTint,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     val displayName = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
-                    Text(
-                        text = displayName,
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = NeutronWhite
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = displayName,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = NeutronWhite
+                        )
+                        val rawColor = contact.profileColor
+                        if (rawColor != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(DarkMatterVariant)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = rawColor,
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = peerColor
+                                )
+                            }
+                        }
+                    }
 
                     if (isPending) {
                         Text(

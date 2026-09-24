@@ -27,6 +27,7 @@ data class HandshakePayload(
     val action: String,
     val uid: String,
     val username: String = "",
+    val profileColor: String = "",
     val ephPub: ByteArray,
     val identityPub: ByteArray,
     val onion: String,
@@ -45,6 +46,7 @@ data class HandshakePayload(
         return action.encodeToByteArray() +
             uid.encodeToByteArray() +
             username.encodeToByteArray() +
+            profileColor.encodeToByteArray() +
             ephPub +
             identityPub +
             onion.encodeToByteArray() +
@@ -70,6 +72,7 @@ data class HandshakePayload(
         if (action != other.action) return false
         if (uid != other.uid) return false
         if (username != other.username) return false
+        if (profileColor != other.profileColor) return false
         if (!ephPub.contentEquals(other.ephPub)) return false
         if (!identityPub.contentEquals(other.identityPub)) return false
         if (onion != other.onion) return false
@@ -85,6 +88,7 @@ data class HandshakePayload(
         result = 31 * result + action.hashCode()
         result = 31 * result + uid.hashCode()
         result = 31 * result + username.hashCode()
+        result = 31 * result + profileColor.hashCode()
         result = 31 * result + ephPub.contentHashCode()
         result = 31 * result + identityPub.contentHashCode()
         result = 31 * result + onion.hashCode()
@@ -109,7 +113,7 @@ data class HandshakePayload(
             val bytes = try {
                 Base64.UrlSafe.decode(trimmed)
             } catch (_: Exception) {
-                Base64.Default.decode(trimmed)
+                Base64.decode(trimmed)
             }
             return fromCbor(bytes)
         }

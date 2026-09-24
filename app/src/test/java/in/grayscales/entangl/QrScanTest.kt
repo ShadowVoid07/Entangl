@@ -91,6 +91,7 @@ class QrScanTest {
             action = "INITIATE",
             uid = "node-abc-123",
             username = "QuantumGhost",
+            profileColor = "#00F0FF",
             ephPub = ByteArray(32) { it.toByte() },
             identityPub = ByteArray(32) { (it + 5).toByte() },
             onion = "testonionaddress56characterslongexampleaddress12345678.onion",
@@ -124,6 +125,7 @@ class QrScanTest {
 
         val parsedPayload = `in`.grayscales.entangl.domain.model.HandshakePayload.fromQrString(decodedText)
         org.junit.Assert.assertEquals(payload, parsedPayload)
+        org.junit.Assert.assertEquals("#00F0FF", parsedPayload.profileColor)
         println("Successfully decoded and verified HandshakePayload!")
     }
 }

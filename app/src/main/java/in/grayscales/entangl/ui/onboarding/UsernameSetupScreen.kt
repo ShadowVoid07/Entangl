@@ -13,11 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,31 +41,41 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.core.identity.NodeIdentityManager
+import `in`.grayscales.entangl.ui.common.CyberColorPicker
+import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
-import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
 
 @Composable
 fun UsernameSetupScreen(
-    onConfirm: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onConfirm: (username: String, profileColor: String) -> Unit,
+    modifier: Modifier = Modifier,
+    initialColorHex: String = ColorUtils.DEFAULT_PROFILE_HEX
 ) {
     var usernameInput by remember { mutableStateOf("") }
+    var selectedColorHex by remember { mutableStateOf(initialColorHex) }
+
     val maxChars = NodeIdentityManager.MAX_USERNAME_LENGTH
-    val isValid = usernameInput.trim().isNotEmpty() && usernameInput.trim().length <= maxChars
+    val isNameValid = usernameInput.trim().isNotEmpty() && usernameInput.trim().length <= maxChars
+    val isColorValid = ColorUtils.isValidHexColor(selectedColorHex)
+    val isValid = isNameValid && isColorValid
+
+    val parsedColor = remember(selectedColorHex) {
+        ColorUtils.parseColorOrDefault(selectedColorHex)
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(VoidBackground)
             .imePadding()
-            .padding(24.dp),
+            .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -73,17 +84,18 @@ fun UsernameSetupScreen(
                 .clip(RoundedCornerShape(16.dp))
                 .background(DarkMatter)
                 .border(1.dp, ParticleBorder, RoundedCornerShape(16.dp))
-                .padding(24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Logo header
             Box(
                 modifier = Modifier
-                    .size(68.dp)
+                    .size(60.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(DarkMatterVariant)
-                    .border(1.dp, QuantumCyan.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .border(1.dp, parsedColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -96,26 +108,24 @@ fun UsernameSetupScreen(
 
             // Title
             Text(
-                text = "CHOOSE YOUR CODENAME",
+                text = "INITIALIZE NODE IDENTITY",
                 fontFamily = QuantumMonospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 letterSpacing = 2.sp,
-                color = QuantumCyan,
+                color = parsedColor,
                 textAlign = TextAlign.Center
             )
 
             // Description
             Text(
-                text = "Set a handle to identify your node during mutual QR handshakes. Your codename is cryptographically signed and shared only with peers you scan.",
+                text = "Choose your codename and quantum avatar profile color. Your profile is cryptographically signed and exchanged mutually with peers you verify.",
                 fontFamily = QuantumMonospace,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
                 color = SubatomicGray,
                 textAlign = TextAlign.Center
             )
-
-            Spacer(modifier = Modifier.height(4.dp))
 
             // Input field
             OutlinedTextField(
@@ -142,14 +152,14 @@ fun UsernameSetupScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         if (isValid) {
-                            onConfirm(usernameInput.trim())
+                            onConfirm(usernameInput.trim(), selectedColorHex)
                         }
                     }
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = QuantumCyan,
+                    focusedBorderColor = parsedColor,
                     unfocusedBorderColor = ParticleBorder,
-                    cursorColor = QuantumCyan,
+                    cursorColor = parsedColor,
                     focusedTextColor = NeutronWhite,
                     unfocusedTextColor = NeutronWhite,
                     focusedContainerColor = DarkMatterVariant,
@@ -174,17 +184,26 @@ fun UsernameSetupScreen(
                     fontFamily = QuantumMonospace,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (usernameInput.length == maxChars) IsotopeMagenta else QuantumCyan
+                    color = if (usernameInput.length == maxChars) IsotopeMagenta else parsedColor
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // Interactive Color Picker
+            CyberColorPicker(
+                selectedHex = selectedColorHex,
+                onColorChanged = { newHex ->
+                    selectedColorHex = newHex
+                },
+                previewInitials = usernameInput.trim().ifBlank { "ID" }
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Confirm button
             Button(
                 onClick = {
                     if (isValid) {
-                        onConfirm(usernameInput.trim())
+                        onConfirm(usernameInput.trim(), selectedColorHex)
                     }
                 },
                 enabled = isValid,
@@ -192,8 +211,8 @@ fun UsernameSetupScreen(
                     .fillMaxWidth()
                     .height(48.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = QuantumCyan,
-                    contentColor = Color.Black,
+                    containerColor = parsedColor,
+                    contentColor = if (selectedColorHex.equals("#FFE600", ignoreCase = true)) Color.Black else Color.Black,
                     disabledContainerColor = DarkMatterVariant,
                     disabledContentColor = SubatomicGray
                 ),

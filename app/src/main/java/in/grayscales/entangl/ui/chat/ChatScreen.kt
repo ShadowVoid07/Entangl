@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,6 +39,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Science
@@ -56,7 +56,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,12 +67,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.domain.model.Direction
 import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.domain.model.MessageStatus
+import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -95,7 +96,6 @@ fun ChatScreen(
     messages: List<Message>,
     selfDestructDuration: Long?,
     onSendMessage: (String) -> Unit,
-    onSimulateIncoming: (String) -> Unit,
     onSetSelfDestruct: (Long?) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -195,22 +195,73 @@ fun ChatScreen(
                     }
                 }
 
+                val peerColor = contact.profileColor?.let { ColorUtils.parseColorOrNull(it) } ?: QuantumCyan
+
                 Box(
                     modifier = Modifier
-                        .size(9.dp)
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(peerColor.copy(alpha = 0.2f))
+                        .border(1.dp, peerColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val initials = contact.displayName?.trim()?.take(2)?.uppercase()
+                    if (!initials.isNullOrBlank() && initials.length <= 2 && initials.all { it.isLetterOrDigit() }) {
+                        Text(
+                            text = initials,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = peerColor
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = peerColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
                         .clip(CircleShape)
                         .background(statusDotColor.copy(alpha = pulseAlpha))
                 )
 
                 Column {
                     val displayName = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
-                    Text(
-                        text = displayName,
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = NeutronWhite
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = displayName,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = NeutronWhite
+                        )
+                        val rawColor = contact.profileColor
+                        if (rawColor != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(DarkMatterVariant)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = rawColor,
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = peerColor
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = statusSubtext,
                         fontFamily = QuantumMonospace,
@@ -288,7 +339,7 @@ fun ChatScreen(
             }
         }
 
-        // 1. Incoming Connection Request Card (when peer scanned us and we haven't accepted yet)
+        // 1. Incoming Connection Request Card (when peer scanned us, and we haven't accepted yet)
         if (isUnaccepted) {
             Card(
                 modifier = Modifier

@@ -14,7 +14,8 @@ data class ContactEntity(
     val displayName: String?,
     val createdAt: Long,
     val lastSeenAt: Long?,
-    val isAccepted: Boolean = false
+    val isAccepted: Boolean = false,
+    val profileColor: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -27,6 +28,7 @@ data class ContactEntity(
         if (createdAt != other.createdAt) return false
         if (lastSeenAt != other.lastSeenAt) return false
         if (isAccepted != other.isAccepted) return false
+        if (profileColor != other.profileColor) return false
         return true
     }
 
@@ -39,6 +41,7 @@ data class ContactEntity(
         result = 31 * result + createdAt.hashCode()
         result = 31 * result + (lastSeenAt?.hashCode() ?: 0)
         result = 31 * result + isAccepted.hashCode()
+        result = 31 * result + (profileColor?.hashCode() ?: 0)
         return result
     }
 
@@ -51,7 +54,8 @@ data class ContactEntity(
             displayName = displayName,
             createdAt = createdAt,
             lastSeenAt = lastSeenAt,
-            isAccepted = isAccepted
+            isAccepted = isAccepted,
+            profileColor = profileColor
         )
     }
 
@@ -65,7 +69,8 @@ data class ContactEntity(
                 displayName = contact.displayName,
                 createdAt = contact.createdAt,
                 lastSeenAt = contact.lastSeenAt,
-                isAccepted = contact.isAccepted
+                isAccepted = contact.isAccepted,
+                profileColor = contact.profileColor
             )
         }
     }

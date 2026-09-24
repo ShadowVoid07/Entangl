@@ -65,10 +65,11 @@ fun MyQrScreen(
     localOnion: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    localUsername: String = ""
+    localUsername: String = "",
+    localProfileColor: String = ""
 ) {
     var payload by remember {
-        mutableStateOf(handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername))
+        mutableStateOf(handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername, localProfileColor))
     }
     var qrBitmap by remember {
         mutableStateOf<ImageBitmap?>(null)
@@ -78,7 +79,7 @@ fun MyQrScreen(
     }
 
     fun regenerate() {
-        payload = handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername)
+        payload = handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername, localProfileColor)
         qrBitmap = QrCodeGenerator.generate(payload.toQrString(), sizePx = 640)
         secondsRemaining = 60
     }
@@ -270,6 +271,7 @@ fun MyQrScreen(
                 TelemetryRow(label = "KEY ALGORITHM", value = "Ed25519 (Identity) + X25519 (Eph)")
                 TelemetryRow(label = "ROUTING MESH", value = localOnion.take(16) + "..." + localOnion.takeLast(10))
                 TelemetryRow(label = "IDENTITY KEY", value = payload.identityPub.take(8).toByteArray().toHex() + "...")
+                TelemetryRow(label = "PROFILE COLOR", value = payload.profileColor.ifBlank { "#00F0FF" })
                 TelemetryRow(label = "NONCE SAMPLE", value = payload.nonce.take(8).toByteArray().toHex() + "...")
             }
         }

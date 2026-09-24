@@ -39,8 +39,6 @@ import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.ui.chat.ChatScreen
 import `in`.grayscales.entangl.ui.chat.ContactsScreen
 import `in`.grayscales.entangl.ui.theme.DarkMatter
-import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
-import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
@@ -55,14 +53,16 @@ fun QuantumTwoPaneLayout(
     selfDestructDuration: Long?,
     onSelectContact: (Contact?) -> Unit,
     onDeleteContact: (Contact) -> Unit,
-    onAcceptContact: (Contact) -> Unit = {},
     onSendMessage: (String) -> Unit,
-    onSimulateIncoming: (String) -> Unit,
     onSetSelfDestruct: (Long?) -> Unit,
     onScanQr: () -> Unit,
     onShowMyQr: () -> Unit,
     onOpenDashboard: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAcceptContact: (Contact) -> Unit = {},
+    localUsername: String = "",
+    localProfileColor: String = "",
+    onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().background(VoidBackground)) {
         val isTwoPane = maxWidth >= 600.dp
@@ -84,7 +84,10 @@ fun QuantumTwoPaneLayout(
                         onAcceptContact = onAcceptContact,
                         onScanQr = onScanQr,
                         onShowMyQr = onShowMyQr,
-                        onOpenDashboard = onOpenDashboard
+                        onOpenDashboard = onOpenDashboard,
+                        localUsername = localUsername,
+                        localProfileColor = localProfileColor,
+                        onUpdateProfile = onUpdateProfile
                     )
                 }
 
@@ -108,7 +111,6 @@ fun QuantumTwoPaneLayout(
                             messages = messages,
                             selfDestructDuration = selfDestructDuration,
                             onSendMessage = onSendMessage,
-                            onSimulateIncoming = onSimulateIncoming,
                             onSetSelfDestruct = onSetSelfDestruct,
                             onBack = { onSelectContact(null) },
                             showBackButton = false,
@@ -133,7 +135,6 @@ fun QuantumTwoPaneLayout(
                     messages = messages,
                     selfDestructDuration = selfDestructDuration,
                     onSendMessage = onSendMessage,
-                    onSimulateIncoming = onSimulateIncoming,
                     onSetSelfDestruct = onSetSelfDestruct,
                     onBack = { onSelectContact(null) },
                     showBackButton = true,
@@ -153,7 +154,10 @@ fun QuantumTwoPaneLayout(
                     onAcceptContact = onAcceptContact,
                     onScanQr = onScanQr,
                     onShowMyQr = onShowMyQr,
-                    onOpenDashboard = onOpenDashboard
+                    onOpenDashboard = onOpenDashboard,
+                    localUsername = localUsername,
+                    localProfileColor = localProfileColor,
+                    onUpdateProfile = onUpdateProfile
                 )
             }
         }

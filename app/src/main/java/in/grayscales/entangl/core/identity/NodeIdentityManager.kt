@@ -43,13 +43,33 @@ class NodeIdentityManager(context: Context) {
             }
         }
 
+    var profileColor: String
+        get() = prefs.getString(KEY_PROFILE_COLOR, DEFAULT_PROFILE_COLOR) ?: DEFAULT_PROFILE_COLOR
+        set(value) {
+            val sanitized = sanitizeHexColor(value)
+            prefs.edit { putString(KEY_PROFILE_COLOR, sanitized) }
+        }
+
     val isUsernameSet: Boolean
         get() = !username.isNullOrBlank()
 
     companion object {
         const val MAX_USERNAME_LENGTH = 25
+        const val DEFAULT_PROFILE_COLOR = "#00F0FF"
         private const val KEY_UID = "local_node_uid"
         private const val KEY_ONION = "local_node_onion"
         private const val KEY_USERNAME = "local_node_username"
+        private const val KEY_PROFILE_COLOR = "local_node_profile_color"
+        private val HEX_REGEX = Regex("^[0-9A-Fa-f]{6}$")
+
+        fun sanitizeHexColor(hex: String?): String {
+            if (hex.isNullOrBlank()) return DEFAULT_PROFILE_COLOR
+            val cleaned = hex.trim().removePrefix("#")
+            return if (HEX_REGEX.matches(cleaned)) {
+                "#${cleaned.uppercase()}"
+            } else {
+                DEFAULT_PROFILE_COLOR
+            }
+        }
     }
 }

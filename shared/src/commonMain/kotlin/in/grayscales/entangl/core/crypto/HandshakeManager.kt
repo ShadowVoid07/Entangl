@@ -8,6 +8,7 @@ sealed class HandshakeVerificationResult {
     data class Success(
         val peerUid: String,
         val peerUsername: String = "",
+        val peerProfileColor: String = "",
         val peerOnion: String,
         val peerIdentityPub: ByteArray,
         val peerEphPub: ByteArray,
@@ -18,6 +19,7 @@ sealed class HandshakeVerificationResult {
             if (other !is Success) return false
             return peerUid == other.peerUid &&
                 peerUsername == other.peerUsername &&
+                peerProfileColor == other.peerProfileColor &&
                 peerOnion == other.peerOnion &&
                 peerIdentityPub.contentEquals(other.peerIdentityPub) &&
                 peerEphPub.contentEquals(other.peerEphPub) &&
@@ -27,6 +29,7 @@ sealed class HandshakeVerificationResult {
         override fun hashCode(): Int {
             var result = peerUid.hashCode()
             result = 31 * result + peerUsername.hashCode()
+            result = 31 * result + peerProfileColor.hashCode()
             result = 31 * result + peerOnion.hashCode()
             result = 31 * result + peerIdentityPub.contentHashCode()
             result = 31 * result + peerEphPub.contentHashCode()
@@ -64,7 +67,12 @@ class HandshakeManager(
     /**
      * Generates a signed QR-1 (INITIATE) handshake payload with a rolling 32-byte nonce.
      */
-    fun generateInitiatorPayload(localUid: String, localOnion: String, username: String = ""): HandshakePayload {
+    fun generateInitiatorPayload(
+        localUid: String,
+        localOnion: String,
+        username: String = "",
+        profileColor: String = ""
+    ): HandshakePayload {
         val identityPub = getOrGenerateIdentityKey()
         val (ephPub, ephemeralPrivBuffer) = keyPairGenerator.generateEphemeralX25519()
         ephemeralPrivBuffer.close()
@@ -77,6 +85,7 @@ class HandshakeManager(
             action = "INITIATE",
             uid = localUid,
             username = username,
+            profileColor = profileColor,
             ephPub = ephPub,
             identityPub = identityPub,
             onion = localOnion,
@@ -92,7 +101,13 @@ class HandshakeManager(
     /**
      * Generates a signed QR-2 (CONFIRM) handshake payload responding to a peer's scan.
      */
-    fun generateConfirmPayload(localUid: String, localOnion: String, peerNonce: ByteArray, username: String = ""): HandshakePayload {
+    fun generateConfirmPayload(
+        localUid: String,
+        localOnion: String,
+        peerNonce: ByteArray,
+        username: String = "",
+        profileColor: String = ""
+    ): HandshakePayload {
         val identityPub = getOrGenerateIdentityKey()
         val (ephPub, ephemeralPrivBuffer) = keyPairGenerator.generateEphemeralX25519()
         ephemeralPrivBuffer.close()
@@ -104,6 +119,7 @@ class HandshakeManager(
             action = "CONFIRM",
             uid = localUid,
             username = username,
+            profileColor = profileColor,
             ephPub = ephPub,
             identityPub = identityPub,
             onion = localOnion,
@@ -149,6 +165,7 @@ class HandshakeManager(
         return HandshakeVerificationResult.Success(
             peerUid = payload.uid,
             peerUsername = payload.username,
+            peerProfileColor = payload.profileColor,
             peerOnion = payload.onion,
             peerIdentityPub = payload.identityPub,
             peerEphPub = payload.ephPub,

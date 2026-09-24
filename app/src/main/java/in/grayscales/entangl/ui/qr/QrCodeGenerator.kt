@@ -3,6 +3,7 @@ package `in`.grayscales.entangl.ui.qr
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.createBitmap
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -47,7 +48,7 @@ object QrCodeGenerator {
             }
         }
 
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
         return bitmap.asImageBitmap()
     }

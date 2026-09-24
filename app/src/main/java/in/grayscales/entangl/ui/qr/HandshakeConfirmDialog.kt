@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -39,6 +40,7 @@ import `in`.grayscales.entangl.core.crypto.HandshakeManager
 import `in`.grayscales.entangl.core.crypto.HandshakeVerificationResult
 import `in`.grayscales.entangl.core.util.toHex
 import `in`.grayscales.entangl.domain.model.HandshakePayload
+import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -111,23 +113,59 @@ fun HandshakeConfirmDialog(
                                 .border(1.dp, ParticleBorder, RoundedCornerShape(8.dp))
                                 .padding(12.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (verificationResult.peerUsername.isNotBlank()) {
-                                    Text(
-                                        text = "PEER CODENAME",
-                                        fontFamily = QuantumMonospace,
-                                        fontSize = 9.sp,
-                                        color = SubatomicGray
-                                    )
-                                    Text(
-                                        text = verificationResult.peerUsername,
-                                        fontFamily = QuantumMonospace,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = QuantumCyan
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val peerColor = ColorUtils.parseColorOrDefault(verificationResult.peerProfileColor, QuantumCyan)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(peerColor.copy(alpha = 0.2f))
+                                            .border(1.5.dp, peerColor, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = verificationResult.peerUsername.take(2).uppercase().ifBlank { "ID" },
+                                            fontFamily = QuantumMonospace,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = peerColor
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            text = "PEER IDENTITY & PROFILE COLOR",
+                                            fontFamily = QuantumMonospace,
+                                            fontSize = 9.sp,
+                                            color = SubatomicGray
+                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = verificationResult.peerUsername.ifBlank { "Peer " + verificationResult.peerUid.take(6).uppercase() },
+                                                fontFamily = QuantumMonospace,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = peerColor
+                                            )
+                                            if (verificationResult.peerProfileColor.isNotBlank()) {
+                                                Text(
+                                                    text = "[ ${verificationResult.peerProfileColor} ]",
+                                                    fontFamily = QuantumMonospace,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = peerColor
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "ENCRYPTED ROUTING MESH",
                                     fontFamily = QuantumMonospace,

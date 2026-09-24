@@ -46,6 +46,9 @@ class ChatViewModel(
     private val _username = MutableStateFlow(nodeIdentityManager.username ?: "")
     val username: StateFlow<String> = _username.asStateFlow()
 
+    private val _profileColor = MutableStateFlow(nodeIdentityManager.profileColor)
+    val profileColor: StateFlow<String> = _profileColor.asStateFlow()
+
     private val _isUsernameSet = MutableStateFlow(nodeIdentityManager.isUsernameSet)
     val isUsernameSet: StateFlow<Boolean> = _isUsernameSet.asStateFlow()
 
@@ -60,6 +63,24 @@ class ChatViewModel(
             _username.value = trimmed
             _isUsernameSet.value = true
         }
+    }
+
+    fun setProfile(newUsername: String, newColorHex: String) {
+        val trimmed = newUsername.trim().take(NodeIdentityManager.MAX_USERNAME_LENGTH)
+        if (trimmed.isNotEmpty()) {
+            nodeIdentityManager.username = trimmed
+            _username.value = trimmed
+            _isUsernameSet.value = true
+        }
+        val sanitizedColor = NodeIdentityManager.sanitizeHexColor(newColorHex)
+        nodeIdentityManager.profileColor = sanitizedColor
+        _profileColor.value = sanitizedColor
+    }
+
+    fun setProfileColor(newColorHex: String) {
+        val sanitizedColor = NodeIdentityManager.sanitizeHexColor(newColorHex)
+        nodeIdentityManager.profileColor = sanitizedColor
+        _profileColor.value = sanitizedColor
     }
 
     fun dismissReciprocalScanPrompt() {
@@ -153,10 +174,12 @@ class ChatViewModel(
         peerPublicKey: ByteArray,
         peerOnion: String,
         safetyNumber: String,
-        peerUsername: String = ""
+        peerUsername: String = "",
+        peerProfileColor: String = ""
     ) {
         viewModelScope.launch {
             val displayName = peerUsername.ifBlank { "Peer " + peerUid.take(6).uppercase() }
+            val color = peerProfileColor.ifBlank { null }
             val contact = Contact(
                 uid = peerUid,
                 publicKey = peerPublicKey,
@@ -165,7 +188,8 @@ class ChatViewModel(
                 displayName = displayName,
                 createdAt = System.currentTimeMillis(),
                 lastSeenAt = System.currentTimeMillis(),
-                isAccepted = true
+                isAccepted = true,
+                profileColor = color
             )
 
             contactRepository.save(contact)
@@ -175,8 +199,9 @@ class ChatViewModel(
 
             // Send network scan ping to peer so they know their QR code was scanned
             val myUsername = nodeIdentityManager.username ?: ""
+            val myColor = nodeIdentityManager.profileColor
             val myPub = cryptoManager.getLocalIdentityPublicKey() ?: handshakeManager.getOrGenerateIdentityKey()
-            Log.i("ChatViewModel", "Dispatching SCAN_PING to peer $peerUid (localUsername: '$myUsername')")
+            Log.i("ChatViewModel", "Dispatching SCAN_PING to peer $peerUid (localUsername: '$myUsername', color: '$myColor')")
             var pingSent = false
             for (attempt in 1..3) {
                 pingSent = networkTransport.sendScanPing(
@@ -184,7 +209,8 @@ class ChatViewModel(
                     localUid = localUid,
                     localUsername = myUsername,
                     localIdentityPub = myPub,
-                    localOnion = localOnion
+                    localOnion = localOnion,
+                    localProfileColor = myColor
                 )
                 if (pingSent) {
                     Log.i("ChatViewModel", "SCAN_PING successfully transmitted to $peerUid on attempt $attempt")
@@ -233,13 +259,14 @@ class ChatViewModel(
 
             // 3. Send acceptance ping back to peer with identity public key
             val myUsername = nodeIdentityManager.username ?: ""
+            val myColor = nodeIdentityManager.profileColor
             val myPub = try {
                 cryptoManager.getLocalIdentityPublicKey() ?: handshakeManager.getOrGenerateIdentityKey()
             } catch (_: Exception) {
                 ByteArray(0)
             }
 
-            Log.i("ChatViewModel", "Dispatching SCAN_ACCEPT to peer ${contact.uid} (localUsername: '$myUsername')")
+            Log.i("ChatViewModel", "Dispatching SCAN_ACCEPT to peer ${contact.uid} (localUsername: '$myUsername', color: '$myColor')")
             var acceptSent = false
             for (attempt in 1..3) {
                 acceptSent = networkTransport.sendScanAccept(
@@ -247,7 +274,8 @@ class ChatViewModel(
                     localUid = localUid,
                     localUsername = myUsername,
                     localIdentityPub = myPub,
-                    localOnion = localOnion
+                    localOnion = localOnion,
+                    localProfileColor = myColor
                 )
                 if (acceptSent) {
                     Log.i("ChatViewModel", "SCAN_ACCEPT successfully transmitted to ${contact.uid} on attempt $attempt")

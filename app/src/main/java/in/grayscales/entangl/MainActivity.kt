@@ -155,13 +155,15 @@ class MainActivity : ComponentActivity() {
 
                 val isUsernameSet by chatViewModel.isUsernameSet.collectAsState()
                 val currentUsername by chatViewModel.username.collectAsState()
+                val currentProfileColor by chatViewModel.profileColor.collectAsState()
                 val promptReciprocalScanContact by chatViewModel.promptReciprocalScanForContact.collectAsState()
 
                 if (!isUsernameSet) {
                     UsernameSetupScreen(
-                        onConfirm = { chosenName ->
-                            chatViewModel.setUsername(chosenName)
-                        }
+                        onConfirm = { chosenName, chosenColor ->
+                            chatViewModel.setProfile(chosenName, chosenColor)
+                        },
+                        initialColorHex = currentProfileColor
                     )
                 } else {
                     var currentScreen by remember { currentScreenState }
@@ -296,11 +298,13 @@ class MainActivity : ComponentActivity() {
                                         onDeleteContact = { contact -> chatViewModel.deleteContact(contact) },
                                         onAcceptContact = { contact -> chatViewModel.acceptContact(contact) },
                                         onSendMessage = { text -> chatViewModel.sendMessage(text) },
-                                        onSimulateIncoming = { text -> chatViewModel.simulateIncomingPacket(text) },
                                         onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
                                         onScanQr = { currentScreen = AppScreen.SCAN_QR },
                                         onShowMyQr = { currentScreen = AppScreen.MY_QR },
-                                        onOpenDashboard = { currentScreen = AppScreen.DASHBOARD }
+                                        onOpenDashboard = { currentScreen = AppScreen.DASHBOARD },
+                                        localUsername = currentUsername,
+                                        localProfileColor = currentProfileColor,
+                                        onUpdateProfile = { name, color -> chatViewModel.setProfile(name, color) }
                                     )
                                 }
 
@@ -310,6 +314,7 @@ class MainActivity : ComponentActivity() {
                                         localUid = chatViewModel.localUid,
                                         localOnion = chatViewModel.localOnion,
                                         localUsername = currentUsername,
+                                        localProfileColor = currentProfileColor,
                                         onBack = { currentScreen = AppScreen.MESSAGES }
                                     )
                                 }
@@ -317,8 +322,8 @@ class MainActivity : ComponentActivity() {
                                 AppScreen.SCAN_QR -> {
                                     QrScannerView(
                                         handshakeManager = chatViewModel.handshakeManager,
-                                        onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername ->
-                                            chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername)
+                                        onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
+                                            chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
                                             currentScreen = AppScreen.MESSAGES
                                         },
                                         onTransferDetected = { payload ->
@@ -371,10 +376,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun QuantumDashboardScreen(
     threats: List<SecurityEvent>,
-    localUsername: String = "",
     onBack: () -> Unit,
-    onDeviceTransfer: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    localUsername: String = "",
+    onDeviceTransfer: () -> Unit = {}
 ) {
     Column(
         modifier = modifier

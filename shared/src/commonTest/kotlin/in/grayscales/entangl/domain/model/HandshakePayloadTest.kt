@@ -14,6 +14,7 @@ class HandshakePayloadTest {
             action = "INITIATE",
             uid = "alice-uid-1234",
             username = "QuantumAlice",
+            profileColor = "#00F0FF",
             ephPub = ByteArray(32) { it.toByte() },
             identityPub = ByteArray(32) { (it + 10).toByte() },
             onion = "v3onionaddress56characterslongexampletestsampleaddress1.onion",
@@ -28,6 +29,7 @@ class HandshakePayloadTest {
         val deserialized = HandshakePayload.fromCbor(cborBytes)
         assertEquals(payload, deserialized)
         assertEquals("QuantumAlice", deserialized.username)
+        assertEquals("#00F0FF", deserialized.profileColor)
     }
 
     @Test
@@ -37,6 +39,7 @@ class HandshakePayloadTest {
             action = "CONFIRM",
             uid = "bob-uid-5678",
             username = "AgentBob",
+            profileColor = "#FF003C",
             ephPub = ByteArray(32) { (it + 5).toByte() },
             identityPub = ByteArray(32) { (it + 20).toByte() },
             onion = "bobonionaddress56characterslongexampletestsampleaddr2.onion",
@@ -52,6 +55,7 @@ class HandshakePayloadTest {
         val deserialized = HandshakePayload.fromQrString(qrString)
         assertEquals(payload, deserialized)
         assertEquals("AgentBob", deserialized.username)
+        assertEquals("#FF003C", deserialized.profileColor)
     }
 
     @Test
@@ -61,6 +65,7 @@ class HandshakePayloadTest {
             action = "INITIATE",
             uid = "uid-1",
             username = "Alice",
+            profileColor = "#00F0FF",
             ephPub = ByteArray(32) { 1 },
             identityPub = ByteArray(32) { 2 },
             onion = "test.onion",
@@ -74,5 +79,8 @@ class HandshakePayloadTest {
 
         val payload3 = payload1.copy(username = "Bob")
         assertFalse(payload1.getCanonicalData().contentEquals(payload3.getCanonicalData()))
+
+        val payload4 = payload1.copy(profileColor = "#FF007F")
+        assertFalse(payload1.getCanonicalData().contentEquals(payload4.getCanonicalData()))
     }
 }

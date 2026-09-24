@@ -15,7 +15,8 @@ data class ContactMigrationItem(
     val displayName: String? = null,
     val createdAt: Long,
     val lastSeenAt: Long? = null,
-    val isAccepted: Boolean
+    val isAccepted: Boolean,
+    val profileColor: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -27,7 +28,8 @@ data class ContactMigrationItem(
             displayName == other.displayName &&
             createdAt == other.createdAt &&
             lastSeenAt == other.lastSeenAt &&
-            isAccepted == other.isAccepted
+            isAccepted == other.isAccepted &&
+            profileColor == other.profileColor
     }
 
     override fun hashCode(): Int {
@@ -39,6 +41,7 @@ data class ContactMigrationItem(
         result = 31 * result + createdAt.hashCode()
         result = 31 * result + (lastSeenAt?.hashCode() ?: 0)
         result = 31 * result + isAccepted.hashCode()
+        result = 31 * result + (profileColor?.hashCode() ?: 0)
         return result
     }
 }
@@ -110,7 +113,9 @@ data class DeviceMigrationPayload(
     val messages: List<MessageMigrationItem>,
     val sessionKeys: List<SessionKeyMigrationItem>,
     val certificate: SuccessionCertificate?,
-    val timestamp: Long = currentTimeMillis()
+    val timestamp: Long = currentTimeMillis(),
+    val localUsername: String? = null,
+    val localProfileColor: String? = null
 ) {
     fun toCbor(): ByteArray = Cbor.encodeToByteArray(serializer(), this)
 

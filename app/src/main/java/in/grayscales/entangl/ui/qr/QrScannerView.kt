@@ -1,7 +1,6 @@
 package `in`.grayscales.entangl.ui.qr
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.util.Size
 import android.view.MotionEvent
@@ -81,15 +80,14 @@ import `in`.grayscales.entangl.ui.theme.VoidBackground
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-@SuppressLint("ClickableViewAccessibility")
 @OptIn(ExperimentalGetImage::class)
 @Composable
 fun QrScannerView(
     handshakeManager: HandshakeManager,
-    onPeerConfirmed: (peerUid: String, peerPublicKey: ByteArray, peerOnion: String, safetyNumber: String, peerUsername: String) -> Unit,
+    onPeerConfirmed: (peerUid: String, peerPublicKey: ByteArray, peerOnion: String, safetyNumber: String, peerUsername: String, peerProfileColor: String) -> Unit,
     onBack: () -> Unit,
-    onTransferDetected: ((TransferQrPayload) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTransferDetected: ((TransferQrPayload) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -441,7 +439,8 @@ fun QrScannerView(
                         result.peerIdentityPub,
                         result.peerOnion,
                         result.safetyNumber,
-                        result.peerUsername
+                        result.peerUsername,
+                        result.peerProfileColor
                     )
                     scannedPayload = null
                     isTargetLocked = false
