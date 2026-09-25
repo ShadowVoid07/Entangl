@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.R
 import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.ui.theme.ColorUtils
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -65,10 +67,12 @@ fun ContactsScreen(
     selectedContactUid: String?,
     onSelectContact: (Contact) -> Unit,
     onDeleteContact: (Contact) -> Unit,
-    onScanQr: () -> Unit,
-    onShowMyQr: () -> Unit,
-    onOpenDashboard: () -> Unit,
+    onHandshake: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onScanQr: () -> Unit = onHandshake,
+    onShowMyQr: () -> Unit = onHandshake,
+    onOpenDashboard: () -> Unit = onOpenSettings,
     onAcceptContact: (Contact) -> Unit = {},
     localUsername: String = "",
     localProfileColor: String = "",
@@ -113,50 +117,39 @@ fun ContactsScreen(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Dashboard Console button
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Settings button (inside position for thumb reachability)
                 IconButton(
-                    onClick = onOpenDashboard,
+                    onClick = onOpenSettings,
                     modifier = Modifier
+                        .size(38.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(DarkMatter)
                         .border(1.dp, ParticleBorder, RoundedCornerShape(8.dp))
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Terminal,
-                        contentDescription = "Console",
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
                         tint = QuantumCyan,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                // Show My QR button
+                // Consolidated Mutual Handshake button (far edge position for optimal thumb ergonomics)
                 IconButton(
-                    onClick = onShowMyQr,
+                    onClick = onHandshake,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(DarkMatter)
-                        .border(1.dp, ParticleBorder, RoundedCornerShape(8.dp))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCode,
-                        contentDescription = "My QR",
-                        tint = QuantumCyan,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Scan Peer QR button
-                IconButton(
-                    onClick = onScanQr,
-                    modifier = Modifier
+                        .size(38.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(QuantumCyan)
                 ) {
                     Icon(
                         imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = "Scan QR",
-                        tint = Color.Black,
+                        contentDescription = "Mutual Handshake",
+                        tint = CyberDark,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -309,11 +302,11 @@ fun ContactsScreen(
                     )
 
                     Button(
-                        onClick = onScanQr,
+                        onClick = onHandshake,
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = QuantumCyan,
-                            contentColor = Color.Black
+                            contentColor = CyberDark
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -324,30 +317,7 @@ fun ContactsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Scan QR Code",
-                            fontFamily = QuantumMonospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = onShowMyQr,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = QuantumCyan
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, QuantumCyan),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.QrCode,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Show My QR",
+                            text = "Initiate Mutual Handshake",
                             fontFamily = QuantumMonospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp
@@ -516,7 +486,7 @@ private fun PendingConnectionCard(
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = QuantumCyan,
-                        contentColor = Color.Black
+                        contentColor = CyberDark
                     ),
                     shape = RoundedCornerShape(6.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)

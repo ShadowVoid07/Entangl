@@ -38,6 +38,7 @@ import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.ui.chat.ChatScreen
 import `in`.grayscales.entangl.ui.chat.ContactsScreen
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
@@ -55,10 +56,12 @@ fun QuantumTwoPaneLayout(
     onDeleteContact: (Contact) -> Unit,
     onSendMessage: (String) -> Unit,
     onSetSelfDestruct: (Long?) -> Unit,
-    onScanQr: () -> Unit,
-    onShowMyQr: () -> Unit,
-    onOpenDashboard: () -> Unit,
+    onHandshake: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onScanQr: () -> Unit = onHandshake,
+    onShowMyQr: () -> Unit = onHandshake,
+    onOpenDashboard: () -> Unit = onOpenSettings,
     onAcceptContact: (Contact) -> Unit = {},
     localUsername: String = "",
     localProfileColor: String = "",
@@ -82,6 +85,8 @@ fun QuantumTwoPaneLayout(
                         onSelectContact = { onSelectContact(it) },
                         onDeleteContact = onDeleteContact,
                         onAcceptContact = onAcceptContact,
+                        onHandshake = onHandshake,
+                        onOpenSettings = onOpenSettings,
                         onScanQr = onScanQr,
                         onShowMyQr = onShowMyQr,
                         onOpenDashboard = onOpenDashboard,
@@ -123,7 +128,11 @@ fun QuantumTwoPaneLayout(
                         )
                     } else {
                         // Standby Mission Control Panel
-                        StandbyPane(onScanQr = onScanQr, onShowMyQr = onShowMyQr)
+                        StandbyPane(
+                            onHandshake = onHandshake,
+                            onScanQr = onScanQr,
+                            onShowMyQr = onShowMyQr
+                        )
                     }
                 }
             }
@@ -152,6 +161,8 @@ fun QuantumTwoPaneLayout(
                     onSelectContact = { onSelectContact(it) },
                     onDeleteContact = onDeleteContact,
                     onAcceptContact = onAcceptContact,
+                    onHandshake = onHandshake,
+                    onOpenSettings = onOpenSettings,
                     onScanQr = onScanQr,
                     onShowMyQr = onShowMyQr,
                     onOpenDashboard = onOpenDashboard,
@@ -166,8 +177,9 @@ fun QuantumTwoPaneLayout(
 
 @Composable
 private fun StandbyPane(
-    onScanQr: () -> Unit,
-    onShowMyQr: () -> Unit
+    onHandshake: () -> Unit = {},
+    onScanQr: () -> Unit = onHandshake,
+    onShowMyQr: () -> Unit = onHandshake
 ) {
     Box(
         modifier = Modifier
@@ -215,11 +227,11 @@ private fun StandbyPane(
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(
-                onClick = onScanQr,
+                onClick = onHandshake,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = QuantumCyan,
-                    contentColor = Color.Black
+                    contentColor = CyberDark
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -230,28 +242,7 @@ private fun StandbyPane(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "SCAN PEER HANDSHAKE QR",
-                    fontFamily = QuantumMonospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
-                )
-            }
-
-            OutlinedButton(
-                onClick = onShowMyQr,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = QuantumCyan),
-                border = androidx.compose.foundation.BorderStroke(1.dp, QuantumCyan),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.QrCode,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "DISPLAY MY UPLINK BEACON",
+                    text = "INITIATE MUTUAL HANDSHAKE",
                     fontFamily = QuantumMonospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp

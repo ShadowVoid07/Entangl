@@ -64,8 +64,10 @@ import `in`.grayscales.entangl.data.network.EntanglRelayService
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.navigation.QuantumTwoPaneLayout
 import `in`.grayscales.entangl.ui.onboarding.UsernameSetupScreen
+import `in`.grayscales.entangl.ui.qr.MutualHandshakeScreen
 import `in`.grayscales.entangl.ui.qr.MyQrScreen
 import `in`.grayscales.entangl.ui.qr.QrScannerView
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.EntanglTheme
@@ -83,10 +85,12 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 
 enum class AppScreen {
     MESSAGES,
+    HANDSHAKE,
+    SETTINGS,
+    DEVICE_TRANSFER,
     MY_QR,
     SCAN_QR,
-    DASHBOARD,
-    DEVICE_TRANSFER
+    DASHBOARD
 }
 
 class MainActivity : ComponentActivity() {
@@ -230,12 +234,12 @@ class MainActivity : ComponentActivity() {
                                         Button(
                                             onClick = {
                                                 chatViewModel.dismissReciprocalScanPrompt()
-                                                currentScreen = AppScreen.SCAN_QR
+                                                currentScreen = AppScreen.HANDSHAKE
                                             },
                                             modifier = Modifier.weight(1.2f),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = QuantumCyan,
-                                                contentColor = Color.Black
+                                                contentColor = CyberDark
                                             ),
                                             shape = RoundedCornerShape(8.dp)
                                         ) {
@@ -299,12 +303,40 @@ class MainActivity : ComponentActivity() {
                                         onAcceptContact = { contact -> chatViewModel.acceptContact(contact) },
                                         onSendMessage = { text -> chatViewModel.sendMessage(text) },
                                         onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
-                                        onScanQr = { currentScreen = AppScreen.SCAN_QR },
-                                        onShowMyQr = { currentScreen = AppScreen.MY_QR },
-                                        onOpenDashboard = { currentScreen = AppScreen.DASHBOARD },
+                                        onHandshake = { currentScreen = AppScreen.HANDSHAKE },
+                                        onOpenSettings = { currentScreen = AppScreen.SETTINGS },
+                                        onScanQr = { currentScreen = AppScreen.HANDSHAKE },
+                                        onShowMyQr = { currentScreen = AppScreen.HANDSHAKE },
+                                        onOpenDashboard = { currentScreen = AppScreen.SETTINGS },
                                         localUsername = currentUsername,
                                         localProfileColor = currentProfileColor,
                                         onUpdateProfile = { name, color -> chatViewModel.setProfile(name, color) }
+                                    )
+                                }
+
+                                AppScreen.HANDSHAKE -> {
+                                    MutualHandshakeScreen(
+                                        chatViewModel = chatViewModel,
+                                        localUsername = currentUsername,
+                                        localProfileColor = currentProfileColor,
+                                        onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
+                                            chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
+                                            currentScreen = AppScreen.MESSAGES
+                                        },
+                                        onTransferDetected = { payload ->
+                                            chatViewModel.localTransferManager.startImportClient(payload)
+                                            currentScreen = AppScreen.DEVICE_TRANSFER
+                                        },
+                                        onBack = { currentScreen = AppScreen.MESSAGES }
+                                    )
+                                }
+
+                                AppScreen.SETTINGS, AppScreen.DASHBOARD -> {
+                                    SettingsScreen(
+                                        threats = activeThreats,
+                                        localUsername = currentUsername,
+                                        onBack = { currentScreen = AppScreen.MESSAGES },
+                                        onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER }
                                     )
                                 }
 
@@ -334,20 +366,11 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
-                                AppScreen.DASHBOARD -> {
-                                    QuantumDashboardScreen(
-                                        threats = activeThreats,
-                                        localUsername = currentUsername,
-                                        onBack = { currentScreen = AppScreen.MESSAGES },
-                                        onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER }
-                                    )
-                                }
-
                                 AppScreen.DEVICE_TRANSFER -> {
                                     DeviceTransferScreen(
                                         chatViewModel = chatViewModel,
                                         onBack = { currentScreen = AppScreen.MESSAGES },
-                                        onScanQrForImport = { currentScreen = AppScreen.SCAN_QR }
+                                        onScanQrForImport = { currentScreen = AppScreen.HANDSHAKE }
                                     )
                                 }
                             }
@@ -371,6 +394,23 @@ class MainActivity : ComponentActivity() {
             chatViewModel.selectContactByUid(contactUid)
         }
     }
+}
+
+@Composable
+fun SettingsScreen(
+    threats: List<SecurityEvent>,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    localUsername: String = "",
+    onDeviceTransfer: () -> Unit = {}
+) {
+    QuantumDashboardScreen(
+        threats = threats,
+        onBack = onBack,
+        modifier = modifier,
+        localUsername = localUsername,
+        onDeviceTransfer = onDeviceTransfer
+    )
 }
 
 @Composable
@@ -408,7 +448,7 @@ fun QuantumDashboardScreen(
                 }
                 Column {
                     Text(
-                        text = "ENTANGL CONSOLE",
+                        text = "ENTANGL SETTINGS",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
@@ -504,7 +544,7 @@ fun QuantumDashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = QuantumCyan,
-                        contentColor = Color.Black
+                        contentColor = CyberDark
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
