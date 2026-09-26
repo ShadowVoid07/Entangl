@@ -52,6 +52,7 @@ import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
+import `in`.grayscales.entangl.ui.home.ChatListRow
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
@@ -76,7 +77,8 @@ fun ContactsScreen(
     onAcceptContact: (Contact) -> Unit = {},
     localUsername: String = "",
     localProfileColor: String = "",
-    onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null
+    onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
+    isPrivacyBlurEnabled: Boolean = true
 ) {
     var showEditProfileDialog by remember { mutableStateOf(false) }
 
@@ -375,11 +377,12 @@ fun ContactsScreen(
                 }
 
                 items(establishedContacts, key = { it.uid }) { contact ->
-                    ContactItem(
+                    ChatListRow(
                         contact = contact,
                         isSelected = contact.uid == selectedContactUid,
                         onClick = { onSelectContact(contact) },
-                        onDelete = { onDeleteContact(contact) }
+                        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+                        onLongClick = { onDeleteContact(contact) }
                     )
                 }
             }

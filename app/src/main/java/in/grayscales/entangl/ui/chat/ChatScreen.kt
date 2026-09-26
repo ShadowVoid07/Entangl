@@ -102,7 +102,8 @@ fun ChatScreen(
     showBackButton: Boolean = true,
     onShowMyQr: (() -> Unit)? = null,
     onAcceptContact: (() -> Unit)? = null,
-    onDeclineContact: (() -> Unit)? = null
+    onDeclineContact: (() -> Unit)? = null,
+    isPeerTyping: Boolean = false
 ) {
     var inputText by remember { mutableStateOf("") }
     var showSafetyDialog by remember { mutableStateOf(false) }
@@ -511,6 +512,21 @@ fun ChatScreen(
         ) {
             items(messages, key = { it.id }) { message ->
                 MessageBubble(message = message)
+            }
+        }
+
+        // Quantum Typing Indicator (simulating post-quantum encrypted payload synthesis)
+        if (isPeerTyping) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                QuantumTypingIndicator(
+                    label = "ENCRYPTING PAYLOAD",
+                    dotColor = QuantumCyan
+                )
             }
         }
 

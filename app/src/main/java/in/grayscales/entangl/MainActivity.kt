@@ -41,6 +41,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -176,6 +178,7 @@ class MainActivity : ComponentActivity() {
                     val activeContact by chatViewModel.activeContact.collectAsState()
                     val activeMessages by chatViewModel.activeMessages.collectAsState()
                     val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
+                    var isPrivacyBlurEnabled by remember { mutableStateOf(true) }
 
                     // Reciprocal scan prompt dialog
                     promptReciprocalScanContact?.let { peer ->
@@ -310,7 +313,8 @@ class MainActivity : ComponentActivity() {
                                         onOpenDashboard = { currentScreen = AppScreen.SETTINGS },
                                         localUsername = currentUsername,
                                         localProfileColor = currentProfileColor,
-                                        onUpdateProfile = { name, color -> chatViewModel.setProfile(name, color) }
+                                        onUpdateProfile = { name, color -> chatViewModel.setProfile(name, color) },
+                                        isPrivacyBlurEnabled = isPrivacyBlurEnabled
                                     )
                                 }
 
@@ -336,7 +340,9 @@ class MainActivity : ComponentActivity() {
                                         threats = activeThreats,
                                         localUsername = currentUsername,
                                         onBack = { currentScreen = AppScreen.MESSAGES },
-                                        onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER }
+                                        onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER },
+                                        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+                                        onTogglePrivacyBlur = { isPrivacyBlurEnabled = it }
                                     )
                                 }
 
@@ -402,14 +408,18 @@ fun SettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     localUsername: String = "",
-    onDeviceTransfer: () -> Unit = {}
+    onDeviceTransfer: () -> Unit = {},
+    isPrivacyBlurEnabled: Boolean = true,
+    onTogglePrivacyBlur: (Boolean) -> Unit = {}
 ) {
     QuantumDashboardScreen(
         threats = threats,
         onBack = onBack,
         modifier = modifier,
         localUsername = localUsername,
-        onDeviceTransfer = onDeviceTransfer
+        onDeviceTransfer = onDeviceTransfer,
+        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+        onTogglePrivacyBlur = onTogglePrivacyBlur
     )
 }
 
@@ -419,7 +429,9 @@ fun QuantumDashboardScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     localUsername: String = "",
-    onDeviceTransfer: () -> Unit = {}
+    onDeviceTransfer: () -> Unit = {},
+    isPrivacyBlurEnabled: Boolean = true,
+    onTogglePrivacyBlur: (Boolean) -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -512,6 +524,62 @@ fun QuantumDashboardScreen(
                 SecurityRow(label = "ACTIVE CODENAME", value = localUsername.ifBlank { "Anonymous Node" })
                 SecurityRow(label = "DISPLAY INTEGRITY", value = "FLAG_SECURE + Obscured Touch Filter")
                 SecurityRow(label = "ZERO LEAK NOTIFICATION", value = "VISIBILITY_SECRET Enforced")
+            }
+        }
+
+        // Anti-Shoulder-Surfing Privacy Shield Card
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(DarkMatter)
+                .border(1.dp, ParticleBorder, RoundedCornerShape(12.dp))
+                .padding(16.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ANTI-SHOULDER-SURFING SHIELD",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = QuantumCyan
+                        )
+                        Text(
+                            text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                "8.dp Gaussian blur active (Hold row to reveal)"
+                            } else {
+                                "Solid 90% black box fallback (API < 31)"
+                            },
+                            fontFamily = QuantumMonospace,
+                            fontSize = 9.sp,
+                            color = SubatomicGray
+                        )
+                    }
+                    Switch(
+                        checked = isPrivacyBlurEnabled,
+                        onCheckedChange = onTogglePrivacyBlur,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyberDark,
+                            checkedTrackColor = QuantumCyan,
+                            uncheckedThumbColor = SubatomicGray,
+                            uncheckedTrackColor = DarkMatterVariant
+                        )
+                    )
+                }
+
+                Text(
+                    text = "Obfuscates message preview text in contact rows against physical eavesdroppers. Hold down any conversation row to temporarily reveal the plaintext.",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    color = SubatomicGray
+                )
             }
         }
 
