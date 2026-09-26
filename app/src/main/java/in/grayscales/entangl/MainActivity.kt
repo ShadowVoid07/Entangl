@@ -332,7 +332,8 @@ class MainActivity : ComponentActivity() {
                                             chatViewModel.localTransferManager.startImportClient(payload)
                                             currentScreen = AppScreen.DEVICE_TRANSFER
                                         },
-                                        onBack = { currentScreen = AppScreen.MESSAGES }
+                                        onBack = { currentScreen = AppScreen.MESSAGES },
+                                        onSettingsClick = { currentScreen = AppScreen.SETTINGS }
                                     )
                                 }
 

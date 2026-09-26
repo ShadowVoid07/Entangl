@@ -66,7 +66,8 @@ fun MutualHandshakeScreen(
     modifier: Modifier = Modifier,
     onTransferDetected: ((TransferQrPayload) -> Unit)? = null,
     onBack: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    onOpenSettings: () -> Unit = onSettingsClick
 ) {
     val context = LocalContext.current
 
@@ -136,7 +137,7 @@ fun MutualHandshakeScreen(
 
             // Right-side Settings icon
             IconButton(
-                onClick = onOpenSettings,
+                onClick = onSettingsClick,
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(8.dp))

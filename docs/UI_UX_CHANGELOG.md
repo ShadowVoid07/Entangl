@@ -53,3 +53,14 @@
 - **Lines**: `SettingsScreen.kt`: 28, 260-281 (Modified); `ContactsScreen.kt`: 33, 308-328 (Modified); `EmptyPeersState.kt`: 31, 212-232 (Modified); `DeviceTransferScreen.kt`: 41, 70, 347-362, 562-583, 679-693 (Modified); `EditProfileDialog.kt`: 26, 50, 248-268 (Modified); `DeviceMigrationConfirmDialog.kt`: 23, 187-208 (Modified); `HandshakeConfirmDialog.kt`: 25, 237-258 (Modified); `SafetyNumberDialog.kt`: 22, 127-142 (Modified); `ChatScreen.kt`: 53, 404-424, 483-504, 692-705 (Modified); `QrScannerView.kt`: 41, 180-195 (Modified)
 - **Purpose**: Primary Button Contrast Normalization & WCAG AAA Compliance:
   Stripped hardcoded white text and icon tint overrides across primary action buttons (including "OPEN DEVICE TRANSFER", "Initiate Mutual Handshake", "INITIATE SECURE EXPORT", "SCAN OLD DEVICE QR CODE", and the profile "APPLY" dialog action, along with related optical permission, contact acceptance, and cryptographic verification buttons). Refactored button configurations to explicitly bind `containerColor = MaterialTheme.colorScheme.primary` and `contentColor = MaterialTheme.colorScheme.onPrimary`, with child `Icon` and `Text` composables explicitly inheriting or passing `MaterialTheme.colorScheme.onPrimary` (`CyberDark = Color(0xFF0F0F13)`). This permanently resolves low-contrast white-on-cyan button states and enforces WCAG AAA compliant text legibility throughout the app.
+
+---
+
+### Entry 6
+- **Timestamp**: 2026-09-26 21:40:00
+- **File**: `app/src/main/java/in/grayscales/entangl/MainActivity.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`
+- **Lines**: `MainActivity.kt`: 336 (Modified); `ContactsScreen.kt`: 123-160 (Modified); `MutualHandshakeScreen.kt`: 70, 140 (Modified)
+- **Purpose**: Top Bar Ergonomics Refactor & Mutual Handshake Route Fix:
+  1. **Top App Bar De-congestion & Spacing**: Resolved visual congestion between action buttons in the Home Top App Bar (`ContactsScreen.kt`). Replaced tight layout with a dedicated `Spacer(modifier = Modifier.width(20.dp))` between action targets to ensure comfortable touch targets and generous breathing room.
+  2. **Top Bar Button Reordering**: Swapped the relative positions of the action buttons so that the primary Mutual Handshake button (`Icons.Default.QrCodeScanner`) is situated first, followed by the breathing spacer and the secondary Settings trigger (`Icons.Default.Settings`), optimizing visual hierarchy and single-handed accessibility.
+  3. **Mutual Handshake Settings Route Wiring**: Fixed the unresponsive Settings button inside `MutualHandshakeScreen.kt` by wiring its `IconButton.onClick` to `onSettingsClick`. Added `onSettingsClick = { currentScreen = AppScreen.SETTINGS }` in `MainActivity.kt`'s `AppScreen.HANDSHAKE` destination, properly linking top bar settings navigation directly to `SettingsScreen`.

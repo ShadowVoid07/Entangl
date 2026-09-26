@@ -121,10 +121,27 @@ fun ContactsScreen(
             }
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Settings button (inside position for thumb reachability)
+                // Consolidated Mutual Handshake button
+                IconButton(
+                    onClick = onHandshake,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(QuantumCyan)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = "Mutual Handshake",
+                        tint = CyberDark,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(20.dp))
+
+                // Settings button
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier
@@ -137,22 +154,6 @@ fun ContactsScreen(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Settings",
                         tint = QuantumCyan,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Consolidated Mutual Handshake button (far edge position for optimal thumb ergonomics)
-                IconButton(
-                    onClick = onHandshake,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(QuantumCyan)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = "Mutual Handshake",
-                        tint = CyberDark,
                         modifier = Modifier.size(20.dp)
                     )
                 }
