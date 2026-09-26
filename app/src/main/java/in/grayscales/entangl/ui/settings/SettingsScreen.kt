@@ -166,13 +166,12 @@ fun SettingsScreen(
                     )
                 }
 
+                SecurityRow(label = "ACTIVE CODENAME", value = localUsername.ifBlank { "Anonymous Node" })
                 SecurityRow(label = "ASYMMETRIC IDENTITY", value = "Ed25519 (Hardware Keystore)")
                 SecurityRow(label = "POST-QUANTUM KEM", value = "ML-KEM-768 (PQXDH)")
                 SecurityRow(label = "FORWARD SECRECY", value = "Double Ratchet + HMAC-SHA256")
                 SecurityRow(label = "STORAGE ENCRYPTION", value = "SQLCipher + Double-Encrypted")
                 SecurityRow(label = "MEMORY ZEROIZATION", value = "Off-Heap NativeKeyBuffer")
-                SecurityRow(label = "ACTIVE CODENAME", value = localUsername.ifBlank { "Anonymous Node" })
-                SecurityRow(label = "DISPLAY INTEGRITY", value = "FLAG_SECURE + Obscured Touch Filter")
                 SecurityRow(label = "ZERO LEAK NOTIFICATION", value = "VISIBILITY_SECRET Enforced")
             }
         }

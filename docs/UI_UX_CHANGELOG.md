@@ -64,3 +64,13 @@
   1. **Top App Bar De-congestion & Spacing**: Resolved visual congestion between action buttons in the Home Top App Bar (`ContactsScreen.kt`). Replaced tight layout with a dedicated `Spacer(modifier = Modifier.width(20.dp))` between action targets to ensure comfortable touch targets and generous breathing room.
   2. **Top Bar Button Reordering**: Swapped the relative positions of the action buttons so that the primary Mutual Handshake button (`Icons.Default.QrCodeScanner`) is situated first, followed by the breathing spacer and the secondary Settings trigger (`Icons.Default.Settings`), optimizing visual hierarchy and single-handed accessibility.
   3. **Mutual Handshake Settings Route Wiring**: Fixed the unresponsive Settings button inside `MutualHandshakeScreen.kt` by wiring its `IconButton.onClick` to `onSettingsClick`. Added `onSettingsClick = { currentScreen = AppScreen.SETTINGS }` in `MainActivity.kt`'s `AppScreen.HANDSHAKE` destination, properly linking top bar settings navigation directly to `SettingsScreen`.
+
+---
+
+### Entry 7
+- **Timestamp**: 2026-09-26 21:45:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/settings/NetworkStatusSheet.kt`, `app/src/main/java/in/grayscales/entangl/ui/settings/SettingsScreen.kt`
+- **Lines**: `NetworkStatusSheet.kt`: 39, 325-345 (Modified); `SettingsScreen.kt`: 169-176 (Modified)
+- **Purpose**: Tor Circuit Contrast Enforcement & Core Protocol Matrix Hierarchy Optimization:
+  1. **Tor Circuit Action Button Contrast Fix**: Stripped hardcoded white text and icon tint styling from the "RENEW TOR CIRCUIT" button inside `NetworkStatusSheet.kt`. Bound `colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)` and explicitly enforced `tint = MaterialTheme.colorScheme.onPrimary` on `Icon(Refresh)` and `color = MaterialTheme.colorScheme.onPrimary` on `Text`, guaranteeing dark `CyberDark` (`#0F0F13`) rendering over bright cyan for full WCAG AAA compliance.
+  2. **Core Protocol Matrix Restructuring**: In `SettingsScreen.kt`, elevated the "ACTIVE CODENAME" readout to the very top of the Core Protocol Matrix immediately below the section header for prominent identity awareness. Completely removed the redundant "DISPLAY INTEGRITY" row, eliminating UI clutter and streamlining technical security telemetry.
