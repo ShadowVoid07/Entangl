@@ -327,6 +327,12 @@ fun ContactsScreen(
                     }
                 }
             }
+        } else if (contacts.isEmpty()) {
+            EmptyPeersState(
+                onHandshake = onHandshake,
+                onShowMyQr = onShowMyQr,
+                modifier = Modifier.weight(1f)
+            )
         } else {
             // Contacts list
             val pendingConnections = contacts.filter { !it.isAccepted }
