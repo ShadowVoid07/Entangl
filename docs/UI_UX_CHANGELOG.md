@@ -74,3 +74,38 @@
 - **Purpose**: Tor Circuit Contrast Enforcement & Core Protocol Matrix Hierarchy Optimization:
   1. **Tor Circuit Action Button Contrast Fix**: Stripped hardcoded white text and icon tint styling from the "RENEW TOR CIRCUIT" button inside `NetworkStatusSheet.kt`. Bound `colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)` and explicitly enforced `tint = MaterialTheme.colorScheme.onPrimary` on `Icon(Refresh)` and `color = MaterialTheme.colorScheme.onPrimary` on `Text`, guaranteeing dark `CyberDark` (`#0F0F13`) rendering over bright cyan for full WCAG AAA compliance.
   2. **Core Protocol Matrix Restructuring**: In `SettingsScreen.kt`, elevated the "ACTIVE CODENAME" readout to the very top of the Core Protocol Matrix immediately below the section header for prominent identity awareness. Completely removed the redundant "DISPLAY INTEGRITY" row, eliminating UI clutter and streamlining technical security telemetry.
+
+---
+
+### Entry 8
+- **Timestamp**: 2026-09-26 23:15:00
+- **File**: `app/src/main/java/in/grayscales/entangl/MainActivity.kt`, `app/src/main/java/in/grayscales/entangl/ui/settings/SettingsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/profile/EditProfileScreen.kt`
+- **Lines**: `MainActivity.kt`: 68, 89, 168-385 (Modified); `SettingsScreen.kt`: 169-176 (Read-only); `EditProfileScreen.kt`: 1-255 (Added); `ContactsScreen.kt`: 167-240 (Modified)
+- **Purpose**: Node Profile Configuration Transition to One-Time Onboarding Flow & Identity Immutability Lock:
+  1. **Settings & Contacts Lock Down**: Removed all edit entry points and interactive controls for the node profile. In `SettingsScreen.kt`, ensured the "ACTIVE CODENAME" row within the Core Protocol Matrix is strictly a read-only textual readout with zero `IconButton` or `clickable` modifiers. In `ContactsScreen.kt`, stripped the `.clickable` modifier, removed the `Icons.Default.Edit` button, removed the dialog trigger, and updated the badge label to "NODE IDENTITY • VERIFIED IMMUTABLE" to enforce complete identity immutability.
+  2. **Dedicated Initialization Screen UI**: Refactored the profile screen (`EditProfileScreen.kt`) into a dedicated first-launch onboarding step titled "INITIALIZE IDENTITY". Added descriptive cryptography subtext clarifying that handles and avatar colors are permanently bound to the local hardware key upon setup. Equipped the primary "APPLY" button with high-contrast `MaterialTheme.colorScheme.primary` and `onPrimary` styling, and wired its callback to transition directly to the Home screen.
+  3. **One-Way Navigation & Backstack Zeroization**: In `MainActivity.kt`, added `INITIALIZE_IDENTITY` to `AppScreen`. Checked existing identity state (`isIdentityConfigured = isUsernameSet && currentUsername.isNotBlank()`) to assign `startDestination = AppScreen.INITIALIZE_IDENTITY` when uninitialized. Configured the onboarding completion callback to perform a one-way forward navigation to `AppScreen.MESSAGES`, and gated `BackHandler` logic so users cannot press the Android back button to return to the setup screen (equivalent to `popUpTo` root inclusive).
+
+---
+
+### Entry 9
+- **Timestamp**: 2026-09-27 00:15:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`
+- **Lines**: 195-215 (Modified)
+- **Purpose**: Raw Hex Color Code Removal & Node Identity Card Aesthetic Declutter:
+  1. **Hex Text Chip Elimination**: Removed the raw hex color text chip (`localProfileColor.ifBlank { ColorUtils.DEFAULT_PROFILE_HEX }`) and its surrounding container box from the Node Identity profile card in `ContactsScreen.kt`. Eliminates unnecessary technical clutter and enhances visual elegance.
+  2. **Preserved Avatar Tinting & Contrast**: Maintained the cryptographic avatar circle's border (`1.5.dp`), background tint (`alpha = 0.18f`), and monogram text styling bound dynamically to `profileColor`, preserving visual color identity without rendering raw hex strings.
+  3. **Vertical Alignment Refinement**: Restructured the profile text Column to stack the active codename directly above the "NODE IDENTITY • VERIFIED IMMUTABLE" readout with clean `2.dp` vertical spacing, creating an unencumbered, premium card presentation.
+
+---
+
+### Entry 10
+- **Timestamp**: 2026-09-27 00:35:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/qr/MyQrScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/QuantumScannerOverlay.kt`
+- **Lines**: `MyQrScreen.kt`: 1-45, 112-140, 148-245 (Modified); `QrScannerView.kt` / `QuantumScannerOverlay.kt`: 33, 370-395 (Modified)
+- **Purpose**: Dynamic Path-Measured TTL Depleting Border & Inner Navigation Arrow Elimination:
+  1. **Top-Middle Anchored TTL Depleting Border**: Replaced the static QR container border in `MyQrScreen.kt` with a dynamic path-measured stroke via `Modifier.drawWithCache`. Anchored the path origin directly at the top-middle (12 o'clock) coordinate `(topCenterX, bounds.top)` and traced clockwise with rounded corners. Extracted dynamic segments via `PathMeasure.getSegment(startDistance = totalLength * (1f - ttlProgress), stopDistance = totalLength)` animated by `animateFloatAsState(targetValue = secondsRemaining / 60f)`. This ensures the depletion gap initiates symmetrically at the top-middle and sweeps clockwise around the perimeter over the 60-second rolling nonce lifecycle, with the stroke transitioning from `QuantumCyan` to `IsotopeMagenta` during the critical final 10 seconds.
+  2. **Transmit Tab Inner Arrow Removal**: Removed the redundant back `IconButton` and spacer from the "QUANTUM UPLINK BEACON" header row in `MyQrScreen.kt`. The header now aligns cleanly as a vertical `Column` since navigation is globally governed by `MutualHandshakeScreen`'s Top App Bar.
+  3. **Receive Tab Camera Overlay De-Clutter**: Removed the redundant inner back `IconButton` from the camera controls overlay in `QrScannerView.kt`. Adjusted horizontal layout to `Arrangement.End`, pushing flashlight and camera flip controls seamlessly to the right edge and eliminating visual conflicts with the global handshake back button.
+
+

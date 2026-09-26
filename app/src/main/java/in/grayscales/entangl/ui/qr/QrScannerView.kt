@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
@@ -372,27 +371,14 @@ fun QrScannerView(
         // Futuristic Quantum Reticle HUD Overlay
         QuantumScannerOverlay(isTargetLocked = isTargetLocked)
 
-        // Top Control Bar
+        // Top Control Bar (Aligned to end, redundant back arrow removed)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(DarkMatter.copy(alpha = 0.8f))
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = QuantumCyan
-                )
-            }
-
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Flashlight toggle
                 IconButton(

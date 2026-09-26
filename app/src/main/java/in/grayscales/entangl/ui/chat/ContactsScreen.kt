@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -81,8 +80,6 @@ fun ContactsScreen(
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
     isPrivacyBlurEnabled: Boolean = true
 ) {
-    var showEditProfileDialog by remember { mutableStateOf(false) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -170,7 +167,6 @@ fun ContactsScreen(
                 .clip(RoundedCornerShape(12.dp))
                 .background(DarkMatter)
                 .border(1.dp, profileColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                .clickable { if (onUpdateProfile != null) showEditProfileDialog = true }
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Row(
@@ -199,68 +195,23 @@ fun ContactsScreen(
                         )
                     }
 
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = localUsername.ifBlank { "My Node" },
-                                fontFamily = QuantumMonospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = NeutronWhite
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(DarkMatterVariant)
-                                    .padding(horizontal = 5.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = localProfileColor.ifBlank { ColorUtils.DEFAULT_PROFILE_HEX },
-                                    fontFamily = QuantumMonospace,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = profileColor
-                                )
-                            }
-                        }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = "NODE PROFILE • TAP TO CONFIGURE",
+                            text = localUsername.ifBlank { "My Node" },
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = NeutronWhite
+                        )
+                        Text(
+                            text = "NODE IDENTITY • VERIFIED IMMUTABLE",
                             fontFamily = QuantumMonospace,
                             fontSize = 9.sp,
                             color = SubatomicGray
                         )
                     }
                 }
-
-                if (onUpdateProfile != null) {
-                    IconButton(
-                        onClick = { showEditProfileDialog = true },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Profile",
-                            tint = profileColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
             }
-        }
-
-        if (showEditProfileDialog && onUpdateProfile != null) {
-            EditProfileDialog(
-                currentUsername = localUsername,
-                currentColorHex = localProfileColor,
-                onDismissRequest = { showEditProfileDialog = false },
-                onSave = { newName, newColor ->
-                    onUpdateProfile(newName, newColor)
-                    showEditProfileDialog = false
-                }
-            )
         }
 
         Spacer(modifier = Modifier.height(14.dp))

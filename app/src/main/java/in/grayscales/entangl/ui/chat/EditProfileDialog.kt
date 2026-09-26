@@ -114,7 +114,7 @@ fun EditProfileDialog(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "EDIT NODE PROFILE",
+                            text = "INITIALIZE IDENTITY",
                             fontFamily = QuantumMonospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
