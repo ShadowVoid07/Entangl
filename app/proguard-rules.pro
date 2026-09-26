@@ -49,3 +49,15 @@
 -keep class in.grayscales.entangl.core.crypto.** { *; }
 -keep class in.grayscales.entangl.data.network.TransportEnvelope { *; }
 -keep class in.grayscales.entangl.data.network.TransportEnvelope$Companion { *; }
+
+# 9. AndroidX WorkManager Workers
+-keep class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+
+# 10. Strip debug logging in Release builds to protect internal cryptographic telemetry
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+}

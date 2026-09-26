@@ -2,7 +2,6 @@ package `in`.grayscales.entangl.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -23,8 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.QrCode
@@ -39,7 +36,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -161,9 +157,9 @@ fun HomeChatLayout(
     onDeleteContact: (Contact) -> Unit,
     onSendMessage: (String) -> Unit,
     onSetSelfDestruct: (Long?) -> Unit,
+    modifier: Modifier = Modifier,
     onHandshake: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    modifier: Modifier = Modifier,
     onScanQr: () -> Unit = onHandshake,
     onShowMyQr: () -> Unit = onHandshake,
     onOpenDashboard: () -> Unit = onOpenSettings,

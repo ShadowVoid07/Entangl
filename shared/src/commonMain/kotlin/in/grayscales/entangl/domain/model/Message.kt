@@ -12,7 +12,8 @@ data class Message(
     val direction: Direction,
     val status: MessageStatus,
     val timestamp: Long,
-    val selfDestructAt: Long?
+    val selfDestructAt: Long?,
+    val ratchetEpoch: Int? = null
 )
 
 enum class Direction {

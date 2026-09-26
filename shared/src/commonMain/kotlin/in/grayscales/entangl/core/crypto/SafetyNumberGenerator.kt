@@ -67,16 +67,10 @@ object SafetyNumberGenerator {
     }
 
     /**
-     * Minimal platform-independent SHA-256 implementation.
-     * Uses java.security.MessageDigest on JVM/Android targets.
-     * For iOS, this would need an expect/actual or a KMP crypto lib.
-     *
-     * NOTE: This is acceptable because SafetyNumberGenerator only hashes
-     * public keys (non-secret data). No key material passes through here.
+     * Platform-independent SHA-256 implementation via expect/actual Sha256Digest.
      */
     private fun sha256(input: ByteArray): ByteArray {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        return digest.digest(input)
+        return `in`.grayscales.entangl.core.util.Sha256Digest.digest(input)
     }
 
     /**

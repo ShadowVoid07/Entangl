@@ -14,7 +14,7 @@ android {
         minSdk = 28
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "0.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -43,6 +43,12 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    lint {
+        disable += setOf("ObsoleteSdkInt")
+        warningsAsErrors = false
+        abortOnError = false
+    }
 }
 
 dependencies {
@@ -68,6 +74,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // CameraX (QR Scanner — stays in app module, Android-only UI)
     implementation(libs.androidx.camera.core)

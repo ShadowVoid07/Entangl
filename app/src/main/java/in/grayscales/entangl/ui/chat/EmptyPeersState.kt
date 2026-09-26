@@ -38,15 +38,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
-import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
@@ -61,9 +58,9 @@ import `in`.grayscales.entangl.ui.theme.SubatomicGray
  */
 @Composable
 fun EmptyPeersState(
+    modifier: Modifier = Modifier,
     onHandshake: () -> Unit = {},
-    onShowMyQr: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onShowMyQr: () -> Unit = {}
 ) {
     val transition = rememberInfiniteTransition(label = "RadarSweepAnimation")
 

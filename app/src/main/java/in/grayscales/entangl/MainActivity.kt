@@ -17,34 +17,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,7 +68,6 @@ import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
-import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
@@ -178,6 +167,97 @@ class MainActivity : ComponentActivity() {
                 val activeMessages by chatViewModel.activeMessages.collectAsState()
                 val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
                 var isPrivacyBlurEnabled by remember { mutableStateOf(true) }
+                var showSecurityAdvisory by remember { mutableStateOf(activeThreats.isNotEmpty()) }
+
+                // Security Advisory Dialog on startup when host OS threats are active
+                if (showSecurityAdvisory && activeThreats.isNotEmpty()) {
+                    Dialog(onDismissRequest = { showSecurityAdvisory = false }) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(1.dp, IsotopeMagenta, RoundedCornerShape(16.dp)),
+                            colors = CardDefaults.cardColors(containerColor = DarkMatter)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(IsotopeMagenta.copy(alpha = 0.15f))
+                                        .border(1.dp, IsotopeMagenta, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = IsotopeMagenta,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Text(
+                                    text = "SECURITY ADVISORY",
+                                    fontFamily = QuantumMonospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 2.sp,
+                                    color = IsotopeMagenta,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+
+                                Text(
+                                    text = "Platform security detected active environment threats:\n" +
+                                        activeThreats.joinToString("\n") { threat ->
+                                            when (threat) {
+                                                is SecurityEvent.DebuggerDetected -> "• Debugger Attached"
+                                                is SecurityEvent.RootDetected -> "• Root/Jailbreak Detected"
+                                                is SecurityEvent.AccessibilityServiceActive -> "• Active Accessibility Keylogger: ${threat.serviceName}"
+                                                is SecurityEvent.RatchetTampered -> "• Ratchet Tampering Detected"
+                                                is SecurityEvent.ClipboardCleared -> "• Insecure Clipboard"
+                                            }
+                                        } +
+                                        "\n\nCryptographic guarantees may be compromised by the host operating system.",
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                    color = SubatomicGray,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            showSecurityAdvisory = false
+                                            currentScreen = AppScreen.SETTINGS
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = DarkMatterVariant),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("INSPECT", fontFamily = QuantumMonospace, fontSize = 11.sp, color = QuantumCyan)
+                                    }
+
+                                    Button(
+                                        onClick = { showSecurityAdvisory = false },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = IsotopeMagenta),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("PROCEED", fontFamily = QuantumMonospace, fontSize = 11.sp, color = NeutronWhite)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Reciprocal scan prompt dialog (only active when identity is configured)
                 if (isIdentityConfigured && currentScreen != AppScreen.INITIALIZE_IDENTITY) {
@@ -418,4 +498,4 @@ class MainActivity : ComponentActivity() {
             chatViewModel.selectContactByUid(contactUid)
         }
     }
-}
+}

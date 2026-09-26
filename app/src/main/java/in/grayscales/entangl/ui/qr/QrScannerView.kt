@@ -211,10 +211,21 @@ fun QrScannerView(
         return
     }
 
-    // Reactive camera binding on cameraProvider, previewView, or front/back toggle
-    LaunchedEffect(useFrontCamera, cameraProvider, previewView) {
+    // Reactive camera binding on cameraProvider, previewView, front/back toggle, or target lock
+    LaunchedEffect(useFrontCamera, cameraProvider, previewView, isTargetLocked) {
         val provider = cameraProvider ?: return@LaunchedEffect
         val pView = previewView ?: return@LaunchedEffect
+
+        if (isTargetLocked) {
+            // Power & thermal optimization: unbind camera and disable torch immediately when QR code is acquired
+            try {
+                camera?.cameraControl?.enableTorch(false)
+                provider.unbindAll()
+                camera = null
+                isTorchOn = false
+            } catch (_: Exception) {}
+            return@LaunchedEffect
+        }
 
         val resolutionSelector = ResolutionSelector.Builder()
             .setResolutionStrategy(

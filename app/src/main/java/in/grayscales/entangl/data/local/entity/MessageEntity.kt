@@ -50,6 +50,13 @@ data class MessageEntity(
     override fun hashCode(): Int = id.hashCode()
 
     fun toDomain(decryptedPlaintext: String): Message {
+        val epoch = if (ciphertext.isNotEmpty() && ciphertext[0] == 0x01.toByte() && ciphertext.size >= 9) {
+            ((ciphertext[5].toInt() and 0xFF) shl 24) or
+            ((ciphertext[6].toInt() and 0xFF) shl 16) or
+            ((ciphertext[7].toInt() and 0xFF) shl 8) or
+            (ciphertext[8].toInt() and 0xFF)
+        } else null
+
         return Message(
             id = id,
             contactUid = contactUid,
@@ -65,7 +72,8 @@ data class MessageEntity(
                 else -> MessageStatus.PENDING
             },
             timestamp = timestamp,
-            selfDestructAt = selfDestructAt
+            selfDestructAt = selfDestructAt,
+            ratchetEpoch = epoch
         )
     }
 

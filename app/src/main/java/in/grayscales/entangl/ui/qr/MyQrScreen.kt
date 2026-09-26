@@ -43,7 +43,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -72,8 +71,8 @@ fun MyQrScreen(
     handshakeManager: HandshakeManager,
     localUid: String,
     localOnion: String,
-    onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onBack: () -> Unit = {},
     localUsername: String = "",
     localProfileColor: String = ""
 ) {

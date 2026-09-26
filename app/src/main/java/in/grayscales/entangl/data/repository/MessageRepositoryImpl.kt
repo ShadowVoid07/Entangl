@@ -186,6 +186,11 @@ class MessageRepositoryImpl(
                 val peerName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
                 val profileColor = envelope.senderProfileColor.ifBlank { null }
                 val existing = contactDao.getByUid(senderUid)
+                
+                // Security Gate: Only preserve isAccepted if the local user has already verified/accepted this peer.
+                // Remote envelopes must never transition an unknown or pending peer directly to isAccepted=true.
+                val isAlreadyAccepted = existing?.isAccepted == true
+                
                 val updatedContact = if (existing != null) {
                     val updatedPub = if (existing.publicKey.isEmpty() && envelope.senderIdentityPub.isNotEmpty()) {
                         envelope.senderIdentityPub
@@ -193,9 +198,10 @@ class MessageRepositoryImpl(
 
                     existing.copy(
                         displayName = peerName,
-                        isAccepted = true,
+                        isAccepted = isAlreadyAccepted,
                         publicKey = updatedPub,
-                        profileColor = profileColor ?: existing.profileColor
+                        profileColor = profileColor ?: existing.profileColor,
+                        lastSeenAt = envelope.timestamp
                     )
                 } else {
                     ContactEntity(
@@ -206,13 +212,13 @@ class MessageRepositoryImpl(
                         displayName = peerName,
                         createdAt = envelope.timestamp,
                         lastSeenAt = envelope.timestamp,
-                        isAccepted = true,
+                        isAccepted = false, // Must remain false until local user verifies
                         profileColor = profileColor
                     )
                 }
                 contactDao.insertOrUpdate(updatedContact)
 
-                if (updatedContact.publicKey.isNotEmpty()) {
+                if (isAlreadyAccepted && updatedContact.publicKey.isNotEmpty()) {
                     try {
                         cryptoManager.initializeSession(senderUid, updatedContact.publicKey, updatedContact.onionAddress)
                         unlockPendingMessages(senderUid)
@@ -221,8 +227,12 @@ class MessageRepositoryImpl(
                     }
                 }
 
-                // 1. Post system notification informing user that peer accepted
-                notificationManager.showScanAcceptNotification(senderUid, peerName)
+                // Post system notification informing user that peer sent/confirmed connection
+                if (isAlreadyAccepted) {
+                    notificationManager.showScanAcceptNotification(senderUid, peerName)
+                } else {
+                    notificationManager.showScanPingNotification(senderUid, peerName)
+                }
 
                 // 2. Insert an in-chat status notice in the conversation stream
                 val noticeId = "accept-${envelope.id}"
@@ -242,18 +252,19 @@ class MessageRepositoryImpl(
 
             TransportEnvelope.TYPE_MESSAGE -> {
                 val contactEntity = contactDao.getByUid(senderUid)
+                val rawCiphertext = TransportEnvelope.unpadPayload(envelope.ciphertext)
 
                 if (contactEntity != null && contactEntity.isAccepted) {
                     // Established and accepted contact!
                     try {
-                        val plaintextBytes = cryptoManager.decryptMessage(senderUid, envelope.ciphertext)
+                        val plaintextBytes = cryptoManager.decryptMessage(senderUid, rawCiphertext)
                         val plaintext = plaintextBytes.decodeToString()
                         decryptedCache[envelope.id] = plaintext
 
                         val entity = MessageEntity(
                             id = envelope.id,
                             contactUid = senderUid,
-                            ciphertext = envelope.ciphertext,
+                            ciphertext = rawCiphertext,
                             direction = 0, // INCOMING
                             status = 2,    // DELIVERED
                             timestamp = envelope.timestamp,
@@ -269,7 +280,7 @@ class MessageRepositoryImpl(
                         val entity = MessageEntity(
                             id = envelope.id,
                             contactUid = senderUid,
-                            ciphertext = envelope.ciphertext,
+                            ciphertext = rawCiphertext,
                             direction = 0, // INCOMING
                             status = 0,    // PENDING
                             timestamp = envelope.timestamp,
@@ -283,7 +294,7 @@ class MessageRepositoryImpl(
                     val entity = MessageEntity(
                         id = envelope.id,
                         contactUid = senderUid,
-                        ciphertext = envelope.ciphertext,
+                        ciphertext = rawCiphertext,
                         direction = 0, // INCOMING
                         status = 0,    // 0 = PENDING / WAITING FOR MUTUAL HANDSHAKE
                         timestamp = envelope.timestamp,
@@ -348,7 +359,7 @@ class MessageRepositoryImpl(
                 senderIdentityPub = identityPub,
                 senderOnion = nodeIdentityManager.localOnion,
                 recipientUid = contactUid,
-                ciphertext = ciphertext,
+                ciphertext = TransportEnvelope.padPayload(ciphertext),
                 timestamp = timestamp
             )
 
@@ -404,7 +415,7 @@ class MessageRepositoryImpl(
                 senderIdentityPub = identityPub,
                 senderOnion = nodeIdentityManager.localOnion,
                 recipientUid = msg.contactUid,
-                ciphertext = msg.ciphertext,
+                ciphertext = TransportEnvelope.padPayload(msg.ciphertext),
                 timestamp = msg.timestamp
             )
 

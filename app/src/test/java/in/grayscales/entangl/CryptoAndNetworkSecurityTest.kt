@@ -139,6 +139,47 @@ class CryptoAndNetworkSecurityTest {
         assertEquals(messageText, decrypted.decodeToString())
     }
 
+    @Test
+    fun testDoubleRatchetForwardSecrecyAndEpochIncrement() = runBlocking {
+        val kpg = KeyPairGenerator()
+        val manager = DefaultCryptoManager(kpg, dummyRatchetVerifier)
+        val peerPublicKey = ByteArray(65) { 0x05 }
+        manager.initializeSession("peer-charlie", peerPublicKey, "charlie-mesh-endpoint")
+
+        assertEquals(0, manager.getSessionRatchetEpoch("peer-charlie"))
+
+        val msg1 = "Payload 1"
+        val enc1 = manager.encryptMessage("peer-charlie", msg1.encodeToByteArray())
+        assertEquals(1, manager.getSessionRatchetEpoch("peer-charlie"))
+
+        val msg2 = "Payload 2"
+        val enc2 = manager.encryptMessage("peer-charlie", msg2.encodeToByteArray())
+        assertEquals(2, manager.getSessionRatchetEpoch("peer-charlie"))
+
+        // Wire format header check: version = 0x01
+        assertEquals(0x01.toByte(), enc1[0])
+        assertEquals(0x01.toByte(), enc2[0])
+
+        // Verify both can be decrypted
+        assertEquals(msg1, manager.decryptMessage("peer-charlie", enc1).decodeToString())
+        assertEquals(msg2, manager.decryptMessage("peer-charlie", enc2).decodeToString())
+    }
+
+    @Test
+    fun testFixed4KbPayloadPaddingAndUnpadding() {
+        val rawMessage = "Quantum secure zero-knowledge payload".encodeToByteArray()
+        val padded = TransportEnvelope.padPayload(rawMessage)
+
+        assertEquals("Padded payload must be exactly 4096 bytes", 4096, padded.size)
+
+        val unpadded = TransportEnvelope.unpadPayload(padded)
+        assertArrayEquals("Unpadded payload must match original bytes", rawMessage, unpadded)
+
+        // Legacy / unpadded payload fallback test
+        val unpaddedDirect = TransportEnvelope.unpadPayload(rawMessage)
+        assertArrayEquals("Unpadded direct should return original data", rawMessage, unpaddedDirect)
+    }
+
     // =========================================================================
     // 4. TransportEnvelope Canonical & Signature Tests
     // =========================================================================

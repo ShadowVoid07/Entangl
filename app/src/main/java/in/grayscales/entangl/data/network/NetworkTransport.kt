@@ -19,7 +19,6 @@ import java.net.URL
 import java.security.MessageDigest
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Data packet transported across online devices.
@@ -59,6 +58,43 @@ data class TransportEnvelope(
         const val TYPE_SCAN_PING = "SCAN_PING"
         const val TYPE_SCAN_ACCEPT = "SCAN_ACCEPT"
         const val TYPE_IDENTITY_ROTATION = "IDENTITY_ROTATION"
+        const val FIXED_PAYLOAD_SIZE = 4096
+
+        fun padPayload(data: ByteArray, targetSize: Int = FIXED_PAYLOAD_SIZE): ByteArray {
+            if (data.size + 4 > targetSize) {
+                val totalLen = ((data.size + 4 + (targetSize - 1)) / targetSize) * targetSize
+                val padded = ByteArray(totalLen)
+                val len = data.size
+                padded[0] = (len ushr 24).toByte()
+                padded[1] = (len ushr 16).toByte()
+                padded[2] = (len ushr 8).toByte()
+                padded[3] = len.toByte()
+                System.arraycopy(data, 0, padded, 4, len)
+                return padded
+            }
+            val padded = ByteArray(targetSize)
+            val len = data.size
+            padded[0] = (len ushr 24).toByte()
+            padded[1] = (len ushr 16).toByte()
+            padded[2] = (len ushr 8).toByte()
+            padded[3] = len.toByte()
+            System.arraycopy(data, 0, padded, 4, len)
+            return padded
+        }
+
+        fun unpadPayload(padded: ByteArray): ByteArray {
+            if (padded.size < 4) return padded
+            val len = ((padded[0].toInt() and 0xFF) shl 24) or
+                      ((padded[1].toInt() and 0xFF) shl 16) or
+                      ((padded[2].toInt() and 0xFF) shl 8) or
+                      (padded[3].toInt() and 0xFF)
+            if (len in 0..(padded.size - 4)) {
+                val data = ByteArray(len)
+                System.arraycopy(padded, 4, data, 0, len)
+                return data
+            }
+            return padded
+        }
 
         fun fromJson(jsonStr: String): TransportEnvelope? {
             return try {
@@ -240,8 +276,11 @@ class NetworkTransport(
         java.util.LinkedHashSet<String>()
     )
 
+    @Volatile
+    private var currentRelayIndex = 0
+
     val activeRelay: String
-        get() = RELAY_SERVERS[0]
+        get() = RELAY_SERVERS[currentRelayIndex.coerceIn(0, RELAY_SERVERS.lastIndex)]
 
     fun addListener(listener: suspend (TransportEnvelope) -> Unit) {
         synchronized(listeners) {
@@ -256,33 +295,52 @@ class NetworkTransport(
     }
 
     /**
-     * Start background subscriptions to the local device's encrypted inbox topic
-     * concurrently across all configured relay servers in the pool.
-     * Guarantees zero split-brain and real-time delivery regardless of sender's connection.
+     * Start background subscription to the local device's encrypted inbox topic.
+     * Uses an active primary relay with automatic failover across the relay pool and
+     * exponential backoff with jitter on connection drops to conserve radio power and battery.
      */
     fun startListening(localUid: String) {
         if (isRunning) return
         isRunning = true
         val topic = getTopicForUid(localUid)
-        log("Starting NetworkTransport multi-relay listeners for UID $localUid on topic $topic across ${RELAY_SERVERS.size} relays")
+        log("Starting NetworkTransport battery-optimized listener for UID $localUid on topic $topic")
 
         synchronized(listeningJobs) {
             listeningJobs.clear()
-            for (relay in RELAY_SERVERS) {
-                val job = scope.launch {
-                    while (isActive && isRunning) {
-                        try {
-                            streamInbox(relay, topic, localUid)
-                        } catch (e: Exception) {
-                            log("Transport stream encounter on $relay: ${e.message}")
-                        }
-                        if (isActive && isRunning) {
-                            delay(2500.milliseconds) // Graceful pause before reconnecting stream for this relay
-                        }
+            val job = scope.launch {
+                var backoffCount = 0
+                while (isActive && isRunning) {
+                    val relay = RELAY_SERVERS[currentRelayIndex % RELAY_SERVERS.size]
+                    val streamCompletedCleanly = try {
+                        streamInbox(relay, topic, localUid)
+                    } catch (e: Exception) {
+                        log("Transport stream encounter on $relay: ${e.message}")
+                        false
                     }
+
+                    if (!isActive || !isRunning) break
+
+                    if (streamCompletedCleanly) {
+                        backoffCount = 0
+                    } else {
+                        backoffCount++
+                        currentRelayIndex = (currentRelayIndex + 1) % RELAY_SERVERS.size
+                        log("Failing over to relay ${activeRelay} (attempt $backoffCount)")
+                    }
+
+                    // Battery optimization: Exponential backoff with jitter on errors
+                    // Prevents keeping cellular radio in high-power state when disconnected or server is down
+                    val delayMs = if (backoffCount == 0) {
+                        1500L
+                    } else {
+                        val base = (2500L * (1L shl (backoffCount - 1).coerceAtMost(5))).coerceAtMost(60_000L)
+                        val jitter = kotlin.random.Random.nextLong(0, 1000)
+                        base + jitter
+                    }
+                    delay(delayMs)
                 }
-                listeningJobs.add(job)
             }
+            listeningJobs.add(job)
         }
     }
 
@@ -431,9 +489,10 @@ class NetworkTransport(
         return sendEnvelope(envelope)
     }
 
-    private suspend fun streamInbox(relay: String, topic: String, localUid: String) = withContext(Dispatchers.IO) {
+    private suspend fun streamInbox(relay: String, topic: String, localUid: String): Boolean = withContext(Dispatchers.IO) {
         val url = URL("$relay/$topic/json?since=10m")
         var conn: HttpURLConnection? = null
+        var streamedAnyData = false
 
         try {
             conn = (url.openConnection() as HttpURLConnection).apply {
@@ -448,6 +507,7 @@ class NetworkTransport(
                 BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { reader ->
                     while (isActive && isRunning) {
                         val line = reader.readLine() ?: break
+                        streamedAnyData = true
                         val current = line.trim()
                         if (current.isEmpty()) continue
                         try {
@@ -463,11 +523,14 @@ class NetworkTransport(
                         }
                     }
                 }
+                streamedAnyData
             } else {
                 log("Stream connect to $relay/$topic failed with HTTP $code")
+                false
             }
         } catch (e: Exception) {
             log("Stream disconnect/error on $relay: ${e.message}")
+            false
         } finally {
             conn?.disconnect()
         }

@@ -252,7 +252,7 @@ private fun UserMessageBubble(
                         )
 
                         // Ratcheted Epoch Badge: Tap for 3D rotationY flip
-                        RatchetedEpochBadge(messageId = message.id)
+                        RatchetedEpochBadge(messageId = message.id, ratchetEpoch = message.ratchetEpoch)
                     }
 
                     Row(
@@ -313,7 +313,8 @@ private fun UserMessageBubble(
 @Composable
 fun RatchetedEpochBadge(
     messageId: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    ratchetEpoch: Int? = null
 ) {
     val haptic = LocalHapticFeedback.current
     var isFlipped by remember { mutableStateOf(false) }
@@ -325,10 +326,14 @@ fun RatchetedEpochBadge(
         label = "epochBadge3DFlip"
     )
 
-    // Compute mock deterministic 4-character hex epoch from message identifier
-    val epochCode = remember(messageId) {
-        val cleanHash = abs(messageId.hashCode()).toString(16).uppercase()
-        "EPOCH: " + cleanHash.take(4).padStart(4, '0')
+    // Compute live Double Ratchet epoch code or fallback to deterministic clean hash
+    val epochCode = remember(messageId, ratchetEpoch) {
+        if (ratchetEpoch != null) {
+            "EPOCH: " + ratchetEpoch.toString(16).uppercase().padStart(4, '0')
+        } else {
+            val cleanHash = abs(messageId.hashCode()).toString(16).uppercase()
+            "EPOCH: " + cleanHash.take(4).padStart(4, '0')
+        }
     }
 
     Box(

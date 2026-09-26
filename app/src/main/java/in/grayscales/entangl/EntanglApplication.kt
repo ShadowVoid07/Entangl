@@ -27,5 +27,8 @@ class EntanglApplication : Application() {
         // Run early hardware/platform security checks
         val platformSecurity: PlatformSecurity = get()
         platformSecurity.initialize()
+
+        // Schedule periodic WorkManager task to purge expired ephemeral messages
+        `in`.grayscales.entangl.core.security.EphemeralMessageCleanupWorker.schedule(this)
     }
 }

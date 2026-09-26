@@ -44,6 +44,9 @@ class KeyDestructionService(
 
         // 3. Close and wipe SQLCipher database files
         try {
+            context.deleteDatabase("entangl_vault.db")
+            context.deleteDatabase("entangl_vault.db-wal")
+            context.deleteDatabase("entangl_vault.db-shm")
             context.deleteDatabase("entangl.db")
             context.deleteDatabase("entangl.db-wal")
             context.deleteDatabase("entangl.db-shm")

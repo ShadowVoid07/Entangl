@@ -72,4 +72,9 @@ interface CryptoManager {
      * @return The public key bytes, or null if no identity has been generated yet.
      */
     fun getLocalIdentityPublicKey(): ByteArray?
+
+    /**
+     * Get the current Double Ratchet epoch counter for an active peer session.
+     */
+    fun getSessionRatchetEpoch(contactUid: String): Int? = null
 }
