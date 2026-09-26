@@ -1,0 +1,111 @@
+# Entangl UI/UX Changelog
+
+### Entry 1
+- **Timestamp**: 2026-09-26 01:45:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/theme/Color.kt`, `app/src/main/java/in/grayscales/entangl/ui/theme/Theme.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/navigation/QuantumTwoPaneLayout.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`, `app/src/main/java/in/grayscales/entangl/MainActivity.kt`
+- **Lines**: `Color.kt`: 22 (Added); `Theme.kt`: 14, 18, 22 (Modified); `ContactsScreen.kt`: 28, 51, 66-71, 113-160, 305-325, 489 (Modified); `QuantumTwoPaneLayout.kt`: 41, 57-62, 88-89, 128-132, 160-161, 180-184, 228-243 (Modified); `MutualHandshakeScreen.kt`: 1-175 (Added); `MainActivity.kt`: 67, 70, 85-86, 237-244, 304-338, 400-435, 545-550 (Modified)
+- **Purpose**: Phase 1 Theme Foundation & Main Navigation Refactor:
+  1. **Theme Contrast Enforcement**: Defined `CyberDark` (`Color(0xFF0F0F13)`) in `Color.kt` and updated Material 3's `QuantumDarkColorScheme` to set `onPrimary`, `onSecondary`, and `onTertiary` to `CyberDark`. This universally guarantees that any Jetpack Compose button or component utilizing the high-luminance `QuantumCyan` primary container automatically renders ultra-crisp, high-contrast dark typography and icons, eliminating low-contrast illegibility.
+  2. **Top App Bar Ergonomic Consolidation**: Refactored the main top bar in `ContactsScreen.kt` and `QuantumTwoPaneLayout.kt`. Consolidated the separate QR display and scanning buttons into a single primary action button with `Icons.Default.QrCodeScanner` styled with `QuantumCyan` background and `CyberDark` icon. Replaced the raw terminal/console button with a standard settings gear (`Icons.Default.Settings`). Swapped button placement for single-handed thumb ergonomics (Settings positioned on the inside, Handshake positioned on the far edge for optimal reachability).
+  3. **Navigation & Screen Routing**: Expanded `AppScreen` in `MainActivity.kt` with `HANDSHAKE` and `SETTINGS` routes. Wired the consolidated Handshake action to `MutualHandshakeScreen` in `ui/qr/` (supporting mutual optical key exchange) and routed Settings to `SettingsScreen` (updating header nomenclature from "CONSOLE" to "SETTINGS" with contrast-corrected actions).
+
+---
+
+### Entry 2
+- **Timestamp**: 2026-09-26 02:25:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/HandshakeConfirmDialog.kt`
+- **Lines**: `MutualHandshakeScreen.kt`: 1-325 (Modified/Rebuilt); `HandshakeConfirmDialog.kt`: 26-45, 215-265, 365-455 (Modified)
+- **Purpose**: Phase 2 The Handshake Suite:
+  1. **Clean De-congested Mutual Handshake Screen**: Rebuilt `MutualHandshakeScreen.kt` with an un-congested top header using a `Row` with `Arrangement.SpaceBetween`, housing a back navigation trigger, centered bold `"MUTUAL HANDSHAKE"` title paired with a green cryptographic shield (`Icons.Default.Security`), and a right-side settings gear button, discarding all cluttered subtext.
+  2. **Segmented Tab Control & Split-Pane Layout**: Implemented a responsive `BoxWithConstraints` architecture: on wide screens (> 600dp, foldables/tablets/landscape), renders a simultaneous side-by-side dual-pane layout (`TRANSMIT [BEACON]` on the left partition and `RECEIVE [SENSOR]` on the right partition separated by a 1.dp `ParticleBorder`); on compact phones (<= 600dp), provides a high-contrast segmented tab bar (`[TRANSMIT [BEACON]]` and `[RECEIVE [SENSOR]]`) for thumb-friendly optical mode switching.
+  3. **Compose-Layer Security Isolation**: Enforced hardware window capture protection (`FLAG_SECURE`) strictly within Compose using `DisposableEffect` over `Activity.window`, ensuring screens and beacons cannot be recorded, screenshotted, or leaked in recent app snapshots.
+  4. **Cryptographic 3x4 Matrix Scramble & Haptic Ceremony**: Enhanced `HandshakeConfirmDialog.kt` by transforming the 60-digit mutual safety number into a 3x4 monospace matrix (12 discrete 5-digit blocks). Built a dynamic `LaunchedEffect` entry sequence that rapidly cycles random alphanumeric cipher characters for 500ms accompanied by ~60ms throttled `TextHandleMove` haptic pulses, culminating in a definitive `LongPress` haptic buzz upon locking into the true cryptographic safety number.
+
+---
+
+### Entry 3
+- **Timestamp**: 2026-09-26 02:45:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/home/HomeChatLayout.kt`, `app/src/main/java/in/grayscales/entangl/ui/home/ChatListRow.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/QuantumTypingIndicator.kt`, `app/src/main/java/in/grayscales/entangl/ui/navigation/QuantumTwoPaneLayout.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`, `app/src/main/java/in/grayscales/entangl/MainActivity.kt`
+- **Lines**: `HomeChatLayout.kt`: 1-285 (Added); `ChatListRow.kt`: 1-260 (Added); `QuantumTypingIndicator.kt`: 1-175 (Added); `QuantumTwoPaneLayout.kt`: 1-52 (Refactored/Delegated); `ContactsScreen.kt`: 55, 79, 377-386 (Modified); `ChatScreen.kt`: 105, 517-531 (Modified); `MainActivity.kt`: 44-45, 181, 316, 344-345, 411-430, 530-585 (Modified)
+- **Purpose**: Phase 3 Chat UX & Trust Indicators:
+  1. **Adaptive Foldable Layout (`ListDetailPaneScaffold`)**: Built `HomeChatLayout.kt` implementing Material 3's `ListDetailPaneScaffold` layout. For foldables, tablets, and wide screens (`maxWidth >= 600.dp`), it renders a simultaneous split-pane interface with the Contact List anchored on the left (360.dp) and the active Conversation or Mission Control Standby dashboard on the right, separated by a 1.dp cybernetic `ParticleBorder`. On compact candybar smartphones (`maxWidth < 600.dp`), it smoothly pushes list-to-detail using `AnimatedContent` slide/fade transitions, hooking system `BackHandler` to fluidly pop back to the conversation list without losing state.
+  2. **SDK-Safe Anti-Shoulder-Surfing Privacy Blur & Hold-to-Reveal**: Built `ChatListRow.kt` featuring `PrivacyBlurText` and `Modifier.privacyBlur`. Encrypted message previews are blurred by default using an 8.dp Gaussian blur strictly gated behind `Build.VERSION.SDK_INT >= Build.VERSION_CODES.S` (Android 12+). On devices running API < 31, an automatic fallback renders a solid black 90% opacity redaction box covering the preview text, preventing unsupported RenderEffect crashes while preserving zero-knowledge privacy. Utilized `pointerInput` with `detectTapGestures(onPress = ...)` and `TextHandleMove` haptics to reveal plaintext *only* while the user physically presses and holds the row, immediately re-engaging obfuscation upon release. Added a global toggle in `SettingsScreen` with live SDK detection status.
+  3. **Quantum Typing Visualization**: Replaced standard "typing..." text with `QuantumTypingIndicator.kt`. Built a custom `Canvas` driven by `rememberInfiniteTransition` that animates 3 `QuantumCyan` dots oscillating across prime-harmonic frequencies (620ms, 890ms, 810ms). The dots asynchronously fluctuate in scale (0.50x - 1.45x) and alpha (0.20f - 1.0f) with outer quantum aura halos and luminescent white core flares, providing a rich, cybernetic visual simulation of an encrypted post-quantum payload being actively synthesized.
+
+---
+
+### Entry 4
+- **Timestamp**: 2026-09-26 14:30:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/settings/SettingsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/settings/NetworkStatusSheet.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/EmptyPeersState.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/MessageBubble.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`, `app/src/main/java/in/grayscales/entangl/MainActivity.kt`
+- **Lines**: `SettingsScreen.kt`: 1-355 (Extracted/Rebuilt); `NetworkStatusSheet.kt`: 1-320 (Added); `EmptyPeersState.kt`: 1-225 (Added); `MessageBubble.kt`: 1-340 (Added); `ContactsScreen.kt`: 327-336 (Modified); `ChatScreen.kt`: 111, 515-525, 630-794 (Refactored/Integrated); `MainActivity.kt`: 72, 404-405 (Modified)
+- **Purpose**: Phase 4 Diagnostics & Micro-Animations:
+  1. **Interactive Settings & Tor Network Diagnostics Sheet**: De-congested the Settings header to a clean, bold "ENTANGL SETTINGS" title without distracting subtext. Integrated a clickable 3-bar `NetworkSignalIndicator` with a 5000ms infinite sweep animation that sequentially pulses cyan across the signal bars (0ms-800ms) to simulate live Tor keep-alive beacons. Tapping the indicator opens `NetworkStatusSheet` via `ModalBottomSheet` with `.windowInsetsPadding(WindowInsets.navigationBars)` to protect against gesture bar cutoff. Renders an interactive cybernetic circuit flowchart ("Device -> Tor Entry -> Onion Service") alongside real-time latency ping metrics and a circuit renewal action.
+  2. **Empty State Pulsing Radar**: Created `EmptyPeersState.kt` featuring a tactical radar background driven by `rememberInfiniteTransition`: 3 concentric `QuantumCyan` rings continuously pulse outward (scale 0f to 2.5f) and fade (alpha 0.5f to 0f) with 1/3-cycle phase offsets and fine crosshair grid lines. Embedded cleanly in `ContactsScreen.kt` when the peer roster is empty, providing immediate call-to-action triggers for mutual handshakes.
+  3. **Message Bubble Zeroization Glitch & Ratcheted Epoch Badge**: Built `MessageBubble.kt` featuring two advanced security micro-animations:
+     - **Digital Shredding Zeroization:** Accepts an `isZeroizing: Boolean` state. When activated, the message bubble executes a 300ms digital shredding glitch (jittering horizontal offset between -8.dp and +8.dp while rapidly flickering alpha), followed by a smooth 250ms vertical collapse to 0.dp height.
+     - **3D Flip Ratcheted Epoch Badge:** Placed an interactive miniature lock badge adjacent to message timestamps. On tap, applies a 3D `rotationY` card flip (0° to 180° with camera distance perspective correction) accompanied by tactile haptic feedback, revealing the active Double Ratchet epoch key (e.g. "EPOCH: 4A9F").
+
+---
+
+### Entry 5
+- **Timestamp**: 2026-09-26 19:35:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/settings/SettingsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/EmptyPeersState.kt`, `app/src/main/java/in/grayscales/entangl/ui/transfer/DeviceTransferScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/EditProfileDialog.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/DeviceMigrationConfirmDialog.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/HandshakeConfirmDialog.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/SafetyNumberDialog.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/QrScannerView.kt`
+- **Lines**: `SettingsScreen.kt`: 28, 260-281 (Modified); `ContactsScreen.kt`: 33, 308-328 (Modified); `EmptyPeersState.kt`: 31, 212-232 (Modified); `DeviceTransferScreen.kt`: 41, 70, 347-362, 562-583, 679-693 (Modified); `EditProfileDialog.kt`: 26, 50, 248-268 (Modified); `DeviceMigrationConfirmDialog.kt`: 23, 187-208 (Modified); `HandshakeConfirmDialog.kt`: 25, 237-258 (Modified); `SafetyNumberDialog.kt`: 22, 127-142 (Modified); `ChatScreen.kt`: 53, 404-424, 483-504, 692-705 (Modified); `QrScannerView.kt`: 41, 180-195 (Modified)
+- **Purpose**: Primary Button Contrast Normalization & WCAG AAA Compliance:
+  Stripped hardcoded white text and icon tint overrides across primary action buttons (including "OPEN DEVICE TRANSFER", "Initiate Mutual Handshake", "INITIATE SECURE EXPORT", "SCAN OLD DEVICE QR CODE", and the profile "APPLY" dialog action, along with related optical permission, contact acceptance, and cryptographic verification buttons). Refactored button configurations to explicitly bind `containerColor = MaterialTheme.colorScheme.primary` and `contentColor = MaterialTheme.colorScheme.onPrimary`, with child `Icon` and `Text` composables explicitly inheriting or passing `MaterialTheme.colorScheme.onPrimary` (`CyberDark = Color(0xFF0F0F13)`). This permanently resolves low-contrast white-on-cyan button states and enforces WCAG AAA compliant text legibility throughout the app.
+
+---
+
+### Entry 6
+- **Timestamp**: 2026-09-26 21:40:00
+- **File**: `app/src/main/java/in/grayscales/entangl/MainActivity.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`
+- **Lines**: `MainActivity.kt`: 336 (Modified); `ContactsScreen.kt`: 123-160 (Modified); `MutualHandshakeScreen.kt`: 70, 140 (Modified)
+- **Purpose**: Top Bar Ergonomics Refactor & Mutual Handshake Route Fix:
+  1. **Top App Bar De-congestion & Spacing**: Resolved visual congestion between action buttons in the Home Top App Bar (`ContactsScreen.kt`). Replaced tight layout with a dedicated `Spacer(modifier = Modifier.width(20.dp))` between action targets to ensure comfortable touch targets and generous breathing room.
+  2. **Top Bar Button Reordering**: Swapped the relative positions of the action buttons so that the primary Mutual Handshake button (`Icons.Default.QrCodeScanner`) is situated first, followed by the breathing spacer and the secondary Settings trigger (`Icons.Default.Settings`), optimizing visual hierarchy and single-handed accessibility.
+  3. **Mutual Handshake Settings Route Wiring**: Fixed the unresponsive Settings button inside `MutualHandshakeScreen.kt` by wiring its `IconButton.onClick` to `onSettingsClick`. Added `onSettingsClick = { currentScreen = AppScreen.SETTINGS }` in `MainActivity.kt`'s `AppScreen.HANDSHAKE` destination, properly linking top bar settings navigation directly to `SettingsScreen`.
+
+---
+
+### Entry 7
+- **Timestamp**: 2026-09-26 21:45:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/settings/NetworkStatusSheet.kt`, `app/src/main/java/in/grayscales/entangl/ui/settings/SettingsScreen.kt`
+- **Lines**: `NetworkStatusSheet.kt`: 39, 325-345 (Modified); `SettingsScreen.kt`: 169-176 (Modified)
+- **Purpose**: Tor Circuit Contrast Enforcement & Core Protocol Matrix Hierarchy Optimization:
+  1. **Tor Circuit Action Button Contrast Fix**: Stripped hardcoded white text and icon tint styling from the "RENEW TOR CIRCUIT" button inside `NetworkStatusSheet.kt`. Bound `colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)` and explicitly enforced `tint = MaterialTheme.colorScheme.onPrimary` on `Icon(Refresh)` and `color = MaterialTheme.colorScheme.onPrimary` on `Text`, guaranteeing dark `CyberDark` (`#0F0F13`) rendering over bright cyan for full WCAG AAA compliance.
+  2. **Core Protocol Matrix Restructuring**: In `SettingsScreen.kt`, elevated the "ACTIVE CODENAME" readout to the very top of the Core Protocol Matrix immediately below the section header for prominent identity awareness. Completely removed the redundant "DISPLAY INTEGRITY" row, eliminating UI clutter and streamlining technical security telemetry.
+
+---
+
+### Entry 8
+- **Timestamp**: 2026-09-26 23:15:00
+- **File**: `app/src/main/java/in/grayscales/entangl/MainActivity.kt`, `app/src/main/java/in/grayscales/entangl/ui/settings/SettingsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/profile/EditProfileScreen.kt`
+- **Lines**: `MainActivity.kt`: 68, 89, 168-385 (Modified); `SettingsScreen.kt`: 169-176 (Read-only); `EditProfileScreen.kt`: 1-255 (Added); `ContactsScreen.kt`: 167-240 (Modified)
+- **Purpose**: Node Profile Configuration Transition to One-Time Onboarding Flow & Identity Immutability Lock:
+  1. **Settings & Contacts Lock Down**: Removed all edit entry points and interactive controls for the node profile. In `SettingsScreen.kt`, ensured the "ACTIVE CODENAME" row within the Core Protocol Matrix is strictly a read-only textual readout with zero `IconButton` or `clickable` modifiers. In `ContactsScreen.kt`, stripped the `.clickable` modifier, removed the `Icons.Default.Edit` button, removed the dialog trigger, and updated the badge label to "NODE IDENTITY • VERIFIED IMMUTABLE" to enforce complete identity immutability.
+  2. **Dedicated Initialization Screen UI**: Refactored the profile screen (`EditProfileScreen.kt`) into a dedicated first-launch onboarding step titled "INITIALIZE IDENTITY". Added descriptive cryptography subtext clarifying that handles and avatar colors are permanently bound to the local hardware key upon setup. Equipped the primary "APPLY" button with high-contrast `MaterialTheme.colorScheme.primary` and `onPrimary` styling, and wired its callback to transition directly to the Home screen.
+  3. **One-Way Navigation & Backstack Zeroization**: In `MainActivity.kt`, added `INITIALIZE_IDENTITY` to `AppScreen`. Checked existing identity state (`isIdentityConfigured = isUsernameSet && currentUsername.isNotBlank()`) to assign `startDestination = AppScreen.INITIALIZE_IDENTITY` when uninitialized. Configured the onboarding completion callback to perform a one-way forward navigation to `AppScreen.MESSAGES`, and gated `BackHandler` logic so users cannot press the Android back button to return to the setup screen (equivalent to `popUpTo` root inclusive).
+
+---
+
+### Entry 9
+- **Timestamp**: 2026-09-27 00:15:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`
+- **Lines**: 195-215 (Modified)
+- **Purpose**: Raw Hex Color Code Removal & Node Identity Card Aesthetic Declutter:
+  1. **Hex Text Chip Elimination**: Removed the raw hex color text chip (`localProfileColor.ifBlank { ColorUtils.DEFAULT_PROFILE_HEX }`) and its surrounding container box from the Node Identity profile card in `ContactsScreen.kt`. Eliminates unnecessary technical clutter and enhances visual elegance.
+  2. **Preserved Avatar Tinting & Contrast**: Maintained the cryptographic avatar circle's border (`1.5.dp`), background tint (`alpha = 0.18f`), and monogram text styling bound dynamically to `profileColor`, preserving visual color identity without rendering raw hex strings.
+  3. **Vertical Alignment Refinement**: Restructured the profile text Column to stack the active codename directly above the "NODE IDENTITY • VERIFIED IMMUTABLE" readout with clean `2.dp` vertical spacing, creating an unencumbered, premium card presentation.
+
+---
+
+### Entry 10
+- **Timestamp**: 2026-09-27 00:35:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/qr/MyQrScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/QuantumScannerOverlay.kt`
+- **Lines**: `MyQrScreen.kt`: 1-45, 112-140, 148-245 (Modified); `QrScannerView.kt` / `QuantumScannerOverlay.kt`: 33, 370-395 (Modified)
+- **Purpose**: Dynamic Path-Measured TTL Depleting Border & Inner Navigation Arrow Elimination:
+  1. **Top-Middle Anchored TTL Depleting Border**: Replaced the static QR container border in `MyQrScreen.kt` with a dynamic path-measured stroke via `Modifier.drawWithCache`. Anchored the path origin directly at the top-middle (12 o'clock) coordinate `(topCenterX, bounds.top)` and traced clockwise with rounded corners. Extracted dynamic segments via `PathMeasure.getSegment(startDistance = totalLength * (1f - ttlProgress), stopDistance = totalLength)` animated by `animateFloatAsState(targetValue = secondsRemaining / 60f)`. This ensures the depletion gap initiates symmetrically at the top-middle and sweeps clockwise around the perimeter over the 60-second rolling nonce lifecycle, with the stroke transitioning from `QuantumCyan` to `IsotopeMagenta` during the critical final 10 seconds.
+  2. **Transmit Tab Inner Arrow Removal**: Removed the redundant back `IconButton` and spacer from the "QUANTUM UPLINK BEACON" header row in `MyQrScreen.kt`. The header now aligns cleanly as a vertical `Column` since navigation is globally governed by `MutualHandshakeScreen`'s Top App Bar.
+  3. **Receive Tab Camera Overlay De-Clutter**: Removed the redundant inner back `IconButton` from the camera controls overlay in `QrScannerView.kt`. Adjusted horizontal layout to `Arrangement.End`, pushing flashlight and camera flip controls seamlessly to the right edge and eliminating visual conflicts with the global handshake back button.
+
+

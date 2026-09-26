@@ -23,14 +23,21 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,6 +48,8 @@ import `in`.grayscales.entangl.core.crypto.HandshakeVerificationResult
 import `in`.grayscales.entangl.core.util.toHex
 import `in`.grayscales.entangl.domain.model.HandshakePayload
 import `in`.grayscales.entangl.ui.theme.ColorUtils
+import `in`.grayscales.entangl.ui.theme.CyberDark
+import kotlinx.coroutines.delay
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -207,25 +216,9 @@ fun HandshakeConfirmDialog(
                                 fontWeight = FontWeight.SemiBold,
                                 color = QuantumCyan
                             )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(DarkMatterVariant)
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = verificationResult.safetyNumber,
-                                    fontFamily = QuantumMonospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    lineHeight = 20.sp,
-                                    textAlign = TextAlign.Center,
-                                    color = NeutronWhite,
-                                    letterSpacing = 1.sp
-                                )
-                            }
+                            ScrambleMatrixText(
+                                safetyNumber = verificationResult.safetyNumber
+                            )
                             Text(
                                 text = "Confirm that the 60-digit number above matches your peer's screen.",
                                 fontFamily = QuantumMonospace,
@@ -244,22 +237,24 @@ fun HandshakeConfirmDialog(
                                 onClick = { onConfirm(verificationResult) },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = QuantumCyan,
-                                    contentColor = Color.Black
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "ESTABLISH ENTANGLEMENT",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
 
@@ -372,3 +367,92 @@ fun HandshakeConfirmDialog(
         }
     }
 }
+
+/**
+ * 3x4 Cryptographic Safety Matrix Display:
+ * Formats the 60-digit safety number into 12 distinct 5-digit monospace blocks across 3 rows and 4 columns.
+ * Performs a 500ms entry scramble with randomized alphanumeric characters accompanied by ~60ms throttled
+ * TextHandleMove haptic pulses, locking into the true fingerprint with a definitive LongPress confirmation buzz.
+ */
+@Composable
+fun ScrambleMatrixText(
+    safetyNumber: String,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+
+    // Extract exactly 60 digits and partition into 12 chunks of 5 digits (3 rows x 4 columns)
+    val targetChunks = remember(safetyNumber) {
+        val digitsOnly = safetyNumber.filter { it.isDigit() }
+        val normalized = if (digitsOnly.length >= 60) {
+            digitsOnly.take(60)
+        } else {
+            digitsOnly.padEnd(60, '0')
+        }
+        normalized.chunked(5) // Exactly 12 blocks of 5 digits
+    }
+
+    var isLocked by remember { mutableStateOf(false) }
+    var displayedChunks by remember { mutableStateOf(targetChunks) }
+
+    LaunchedEffect(safetyNumber) {
+        val charset = "0123456789ABCDEF"
+        val startTime = System.currentTimeMillis()
+        val durationMs = 500L
+        val throttleMs = 60L
+
+        isLocked = false
+
+        while (System.currentTimeMillis() - startTime < durationMs) {
+            displayedChunks = List(12) {
+                (1..5).map { charset.random() }.joinToString("")
+            }
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            delay(throttleMs)
+        }
+
+        // Lock in the final verified safety number
+        displayedChunks = targetChunks
+        isLocked = true
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(DarkMatterVariant)
+            .border(
+                1.dp,
+                if (!isLocked) QuantumCyan.copy(alpha = 0.5f) else QuantumCyan,
+                RoundedCornerShape(10.dp)
+            )
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // 3 rows x 4 columns = 12 blocks of 5 digits = 60 digits
+        for (rowIndex in 0 until 3) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (colIndex in 0 until 4) {
+                    val chunkIndex = rowIndex * 4 + colIndex
+                    val chunkText = displayedChunks.getOrElse(chunkIndex) { "•••••" }
+                    Text(
+                        text = chunkText,
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        letterSpacing = 1.sp,
+                        color = if (!isLocked) QuantumCyan.copy(alpha = 0.85f) else NeutronWhite,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
+}
+

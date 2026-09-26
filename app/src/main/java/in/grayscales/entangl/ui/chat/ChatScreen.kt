@@ -51,6 +51,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -102,11 +103,13 @@ fun ChatScreen(
     showBackButton: Boolean = true,
     onShowMyQr: (() -> Unit)? = null,
     onAcceptContact: (() -> Unit)? = null,
-    onDeclineContact: (() -> Unit)? = null
+    onDeclineContact: (() -> Unit)? = null,
+    isPeerTyping: Boolean = false
 ) {
     var inputText by remember { mutableStateOf("") }
     var showSafetyDialog by remember { mutableStateOf(false) }
     var showNetworkInfoDialog by remember { mutableStateOf(false) }
+    val zeroizingMessageIds = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     val listState = rememberLazyListState()
 
     // Auto-scroll to latest message on new message or when keyboard opens
@@ -399,22 +402,24 @@ fun ChatScreen(
                             onClick = { onAcceptContact?.invoke() },
                             modifier = Modifier.weight(1.2f),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = QuantumCyan,
-                                contentColor = Color.Black
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Accept",
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
 
@@ -476,8 +481,8 @@ fun ChatScreen(
                         Button(
                             onClick = onShowMyQr,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = QuantumCyan,
-                                contentColor = Color.Black
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(6.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
@@ -485,14 +490,16 @@ fun ChatScreen(
                             Icon(
                                 imageVector = Icons.Default.QrCode,
                                 contentDescription = null,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "SHARE QR",
                                 fontFamily = QuantumMonospace,
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }
@@ -510,7 +517,28 @@ fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages, key = { it.id }) { message ->
-                MessageBubble(message = message)
+                MessageBubble(
+                    message = message,
+                    isZeroizing = zeroizingMessageIds.contains(message.id),
+                    onZeroized = {
+                        zeroizingMessageIds.remove(message.id)
+                    }
+                )
+            }
+        }
+
+        // Quantum Typing Indicator (simulating post-quantum encrypted payload synthesis)
+        if (isPeerTyping) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                QuantumTypingIndicator(
+                    label = "ENCRYPTING PAYLOAD",
+                    dotColor = QuantumCyan
+                )
             }
         }
 
@@ -607,168 +635,6 @@ fun ChatScreen(
 }
 
 @Composable
-private fun MessageBubble(message: Message) {
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(message.id) {
-        isVisible = true
-    }
-
-    AnimatedVisibility(
-        visible = isVisible,
-        enter = fadeIn(animationSpec = tween(400)) + slideInVertically(
-            initialOffsetY = { it / 2 },
-            animationSpec = tween(400, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-        )
-    ) {
-        if (message.id.startsWith("accept-") || message.id.startsWith("status-") || message.id.startsWith(
-                "system-"
-            )
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp, horizontal = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    color = DarkMatterVariant,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.35f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = QuantumCyan,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = message.plaintext,
-                            fontFamily = QuantumMonospace,
-                            fontSize = 11.sp,
-                            color = NeutronWhite,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        } else {
-
-            val isOutgoing = message.direction == Direction.OUTGOING
-            val alignment = if (isOutgoing) Alignment.End else Alignment.Start
-            val bubbleColor = if (isOutgoing) Color(0xFF0C2B38) else Color(0xFF191924)
-            val borderColor = if (isOutgoing) QuantumCyan.copy(alpha = 0.5f) else ParticleBorder
-            val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = alignment
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.82f)
-                        .clip(
-                            RoundedCornerShape(
-                                topStart = 14.dp,
-                                topEnd = 14.dp,
-                                bottomStart = if (isOutgoing) 14.dp else 2.dp,
-                                bottomEnd = if (isOutgoing) 2.dp else 14.dp
-                            )
-                        )
-                        .background(bubbleColor)
-                        .border(
-                            1.dp,
-                            borderColor,
-                            RoundedCornerShape(
-                                topStart = 14.dp,
-                                topEnd = 14.dp,
-                                bottomStart = if (isOutgoing) 14.dp else 2.dp,
-                                bottomEnd = if (isOutgoing) 2.dp else 14.dp
-                            )
-                        )
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        // Clean message text — without brackets
-                        Text(
-                            text = message.plaintext,
-                            fontFamily = QuantumMonospace,
-                            fontSize = 13.sp,
-                            color = NeutronWhite,
-                            lineHeight = 19.sp
-                        )
-
-                        // Metadata line
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = timeFormatter.format(Date(message.timestamp)),
-                                fontFamily = QuantumMonospace,
-                                fontSize = 9.sp,
-                                color = SubatomicGray
-                            )
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                if (message.selfDestructAt != null) {
-                                    Text(
-                                        text = "TTL",
-                                        fontFamily = QuantumMonospace,
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = IsotopeMagenta
-                                    )
-                                }
-
-                                if (isOutgoing) {
-                                    when (message.status) {
-                                        MessageStatus.PENDING -> {
-                                            Text(
-                                                text = "Sending...",
-                                                fontFamily = QuantumMonospace,
-                                                fontSize = 9.sp,
-                                                color = SubatomicGray
-                                            )
-                                        }
-
-                                        MessageStatus.SENT -> {
-                                            Icon(
-                                                imageVector = Icons.Default.Done,
-                                                contentDescription = "Sent",
-                                                tint = SubatomicGray,
-                                                modifier = Modifier.size(12.dp)
-                                            )
-                                        }
-
-                                        MessageStatus.DELIVERED, MessageStatus.READ -> {
-                                            Icon(
-                                                imageVector = Icons.Default.DoneAll,
-                                                contentDescription = "Delivered",
-                                                tint = QuantumCyan,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun NetworkInfoDialog(
     contact: Contact,
     isUnaccepted: Boolean,
@@ -828,10 +694,19 @@ private fun NetworkInfoDialog(
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = QuantumCyan, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text(text = "CLOSE", fontFamily = QuantumMonospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(
+                        text = "CLOSE",
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         }

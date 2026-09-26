@@ -11,15 +11,15 @@ import androidx.core.view.WindowCompat
 
 private val QuantumDarkColorScheme = darkColorScheme(
     primary = QuantumCyan,
-    onPrimary = VoidBackground,
+    onPrimary = CyberDark,
     primaryContainer = DarkMatterVariant,
     onPrimaryContainer = QuantumCyan,
     secondary = QuantumCyanVariant,
-    onSecondary = VoidBackground,
+    onSecondary = CyberDark,
     secondaryContainer = DarkMatter,
     onSecondaryContainer = NeutronWhite,
     tertiary = QuantumGreen,
-    onTertiary = VoidBackground,
+    onTertiary = CyberDark,
     background = VoidBackground,
     onBackground = NeutronWhite,
     surface = DarkMatter,

@@ -1,6 +1,9 @@
 package `in`.grayscales.entangl.ui.qr
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,12 +24,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,8 +40,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +72,7 @@ fun MyQrScreen(
     handshakeManager: HandshakeManager,
     localUid: String,
     localOnion: String,
-    onBack: () -> Unit,
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     localUsername: String = "",
     localProfileColor: String = ""
@@ -103,6 +112,12 @@ fun MyQrScreen(
         label = "timerColor"
     )
 
+    val ttlProgress by animateFloatAsState(
+        targetValue = (secondsRemaining / 60f).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
+        label = "ttlProgress"
+    )
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -111,46 +126,129 @@ fun MyQrScreen(
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Top Bar
-        Row(
+        // Top Bar - Cleaned of redundant back arrow
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = QuantumCyan
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Text(
-                    text = "QUANTUM UPLINK BEACON",
-                    fontFamily = QuantumMonospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    letterSpacing = 2.sp,
-                    color = QuantumCyan
-                )
-                Text(
-                    text = "STAGE 1: INITIATE PHYSICAL HANDSHAKE",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 10.sp,
-                    color = SubatomicGray
-                )
-            }
+            Text(
+                text = "QUANTUM UPLINK BEACON",
+                fontFamily = QuantumMonospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                letterSpacing = 2.sp,
+                color = QuantumCyan
+            )
+            Text(
+                text = "STAGE 1: INITIATE PHYSICAL HANDSHAKE",
+                fontFamily = QuantumMonospace,
+                fontSize = 10.sp,
+                color = SubatomicGray
+            )
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // QR Frame Card
+        // QR Frame Card with Dynamic Animated TTL Depleting Border
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(DarkMatter)
-                .border(1.dp, timerColor, RoundedCornerShape(16.dp))
+                .drawWithCache {
+                    val strokeWidth = 2.dp.toPx()
+                    val halfStroke = strokeWidth / 2f
+                    val cornerRadiusPx = 16.dp.toPx() - halfStroke
+
+                    val bounds = Rect(
+                        left = halfStroke,
+                        top = halfStroke,
+                        right = size.width - halfStroke,
+                        bottom = size.height - halfStroke
+                    )
+
+                    val topCenterX = (bounds.left + bounds.right) / 2f
+                    val r = cornerRadiusPx
+
+                    val fullPath = Path().apply {
+                        // Start at top-middle anchor (12 o'clock)
+                        moveTo(topCenterX, bounds.top)
+                        // Top edge to top-right corner
+                        lineTo(bounds.right - r, bounds.top)
+                        arcTo(
+                            rect = Rect(bounds.right - 2 * r, bounds.top, bounds.right, bounds.top + 2 * r),
+                            startAngleDegrees = 270f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false
+                        )
+                        // Right edge to bottom-right corner
+                        lineTo(bounds.right, bounds.bottom - r)
+                        arcTo(
+                            rect = Rect(bounds.right - 2 * r, bounds.bottom - 2 * r, bounds.right, bounds.bottom),
+                            startAngleDegrees = 0f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false
+                        )
+                        // Bottom edge to bottom-left corner
+                        lineTo(bounds.left + r, bounds.bottom)
+                        arcTo(
+                            rect = Rect(bounds.left, bounds.bottom - 2 * r, bounds.left + 2 * r, bounds.bottom),
+                            startAngleDegrees = 90f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false
+                        )
+                        // Left edge to top-left corner
+                        lineTo(bounds.left, bounds.top + r)
+                        arcTo(
+                            rect = Rect(bounds.left, bounds.top, bounds.left + 2 * r, bounds.top + 2 * r),
+                            startAngleDegrees = 180f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false
+                        )
+                        // Back to top-middle
+                        lineTo(topCenterX, bounds.top)
+                        close()
+                    }
+
+                    val pathMeasure = PathMeasure().apply {
+                        setPath(fullPath, false)
+                    }
+                    val totalLength = pathMeasure.length
+
+                    val segmentPath = Path()
+                    if (ttlProgress > 0f) {
+                        val startDistance = (totalLength * (1f - ttlProgress)).coerceIn(0f, totalLength)
+                        pathMeasure.getSegment(
+                            startDistance = startDistance,
+                            stopDistance = totalLength,
+                            destination = segmentPath,
+                            startWithMoveTo = true
+                        )
+                    }
+
+                    onDrawWithContent {
+                        drawContent()
+
+                        // Subtle base perimeter track
+                        drawRoundRect(
+                            color = ParticleBorder,
+                            topLeft = bounds.topLeft,
+                            size = bounds.size,
+                            cornerRadius = CornerRadius(cornerRadiusPx),
+                            style = Stroke(width = strokeWidth)
+                        )
+
+                        // Dynamic depleting TTL progress border in QuantumCyan / timerColor
+                        drawPath(
+                            path = segmentPath,
+                            color = timerColor,
+                            style = Stroke(
+                                width = strokeWidth,
+                                cap = StrokeCap.Round
+                            )
+                        )
+                    }
+                }
                 .padding(20.dp),
             contentAlignment = Alignment.Center
         ) {

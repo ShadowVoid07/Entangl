@@ -39,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -66,6 +67,7 @@ import `in`.grayscales.entangl.data.network.TransferProgress
 import `in`.grayscales.entangl.domain.model.TransferQrPayload
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.qr.QrCodeGenerator
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -344,8 +346,8 @@ private fun ExportTabContent(
                             onClick = onStartExport,
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = QuantumCyan,
-                                contentColor = Color.Black
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
@@ -353,7 +355,8 @@ private fun ExportTabContent(
                                 text = "INITIATE SECURE EXPORT",
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }
@@ -558,22 +561,24 @@ private fun ImportTabContent(
                             onClick = onScanQr,
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = QuantumCyan,
-                                contentColor = Color.Black
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.QrCodeScanner,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "SCAN OLD DEVICE QR CODE",
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
 
@@ -673,7 +678,7 @@ private fun ImportTabContent(
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = QuantumGreen,
-                                contentColor = Color.Black
+                                contentColor = CyberDark
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
@@ -681,7 +686,8 @@ private fun ImportTabContent(
                                 text = "OPEN CONSOLE & MESSAGES",
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                color = CyberDark
                             )
                         }
                     }

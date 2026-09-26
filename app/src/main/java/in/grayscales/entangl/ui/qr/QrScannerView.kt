@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
@@ -39,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -177,8 +177,8 @@ fun QrScannerView(
                 Button(
                     onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = QuantumCyan,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -187,7 +187,8 @@ fun QrScannerView(
                         text = "AUTHORIZE OPTICAL SENSOR",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
 
@@ -370,27 +371,14 @@ fun QrScannerView(
         // Futuristic Quantum Reticle HUD Overlay
         QuantumScannerOverlay(isTargetLocked = isTargetLocked)
 
-        // Top Control Bar
+        // Top Control Bar (Aligned to end, redundant back arrow removed)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(DarkMatter.copy(alpha = 0.8f))
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = QuantumCyan
-                )
-            }
-
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Flashlight toggle
                 IconButton(

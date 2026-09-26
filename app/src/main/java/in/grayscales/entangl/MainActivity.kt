@@ -41,6 +41,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,9 +65,12 @@ import `in`.grayscales.entangl.core.security.SecurityEvent
 import `in`.grayscales.entangl.data.network.EntanglRelayService
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.navigation.QuantumTwoPaneLayout
-import `in`.grayscales.entangl.ui.onboarding.UsernameSetupScreen
+import `in`.grayscales.entangl.ui.profile.EditProfileScreen
+import `in`.grayscales.entangl.ui.qr.MutualHandshakeScreen
 import `in`.grayscales.entangl.ui.qr.MyQrScreen
 import `in`.grayscales.entangl.ui.qr.QrScannerView
+import `in`.grayscales.entangl.ui.settings.SettingsScreen
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.EntanglTheme
@@ -82,11 +87,14 @@ import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 enum class AppScreen {
+    INITIALIZE_IDENTITY,
     MESSAGES,
+    HANDSHAKE,
+    SETTINGS,
+    DEVICE_TRANSFER,
     MY_QR,
     SCAN_QR,
-    DASHBOARD,
-    DEVICE_TRANSFER
+    DASHBOARD
 }
 
 class MainActivity : ComponentActivity() {
@@ -158,22 +166,21 @@ class MainActivity : ComponentActivity() {
                 val currentProfileColor by chatViewModel.profileColor.collectAsState()
                 val promptReciprocalScanContact by chatViewModel.promptReciprocalScanForContact.collectAsState()
 
-                if (!isUsernameSet) {
-                    UsernameSetupScreen(
-                        onConfirm = { chosenName, chosenColor ->
-                            chatViewModel.setProfile(chosenName, chosenColor)
-                        },
-                        initialColorHex = currentProfileColor
-                    )
-                } else {
-                    var currentScreen by remember { currentScreenState }
+                val isIdentityConfigured = isUsernameSet && currentUsername.isNotBlank()
+                val startDestination = if (!isIdentityConfigured) AppScreen.INITIALIZE_IDENTITY else AppScreen.MESSAGES
 
-                    val contacts by chatViewModel.contacts.collectAsState()
-                    val activeContact by chatViewModel.activeContact.collectAsState()
-                    val activeMessages by chatViewModel.activeMessages.collectAsState()
-                    val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
+                var currentScreen by remember(isIdentityConfigured) {
+                    mutableStateOf(if (!isIdentityConfigured) AppScreen.INITIALIZE_IDENTITY else currentScreenState.value)
+                }
 
-                    // Reciprocal scan prompt dialog
+                val contacts by chatViewModel.contacts.collectAsState()
+                val activeContact by chatViewModel.activeContact.collectAsState()
+                val activeMessages by chatViewModel.activeMessages.collectAsState()
+                val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
+                var isPrivacyBlurEnabled by remember { mutableStateOf(true) }
+
+                // Reciprocal scan prompt dialog (only active when identity is configured)
+                if (isIdentityConfigured && currentScreen != AppScreen.INITIALIZE_IDENTITY) {
                     promptReciprocalScanContact?.let { peer ->
                         Dialog(onDismissRequest = { chatViewModel.dismissReciprocalScanPrompt() }) {
                             Card(
@@ -230,12 +237,12 @@ class MainActivity : ComponentActivity() {
                                         Button(
                                             onClick = {
                                                 chatViewModel.dismissReciprocalScanPrompt()
-                                                currentScreen = AppScreen.SCAN_QR
+                                                currentScreen = AppScreen.HANDSHAKE
                                             },
                                             modifier = Modifier.weight(1.2f),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = QuantumCyan,
-                                                contentColor = Color.Black
+                                                contentColor = CyberDark
                                             ),
                                             shape = RoundedCornerShape(8.dp)
                                         ) {
@@ -265,91 +272,131 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
 
-                    // Intercept back gesture to return to main messages list
-                    BackHandler(enabled = currentScreen != AppScreen.MESSAGES) {
-                        currentScreen = AppScreen.MESSAGES
-                    }
+                // Intercept back gesture to return to main messages list (locked out from returning to setup)
+                BackHandler(enabled = currentScreen != AppScreen.MESSAGES && currentScreen != AppScreen.INITIALIZE_IDENTITY) {
+                    currentScreen = AppScreen.MESSAGES
+                }
 
-                    // Intercept back gesture in candybar mode to return to contacts
-                    BackHandler(enabled = currentScreen == AppScreen.MESSAGES && activeContact != null) {
-                        chatViewModel.selectContact(null)
-                    }
+                // Intercept back gesture during initialization - exit application (cannot bypass setup)
+                BackHandler(enabled = currentScreen == AppScreen.INITIALIZE_IDENTITY) {
+                    finish()
+                }
 
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        containerColor = VoidBackground
-                    ) { innerPadding ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                                .consumeWindowInsets(innerPadding)
-                                .imePadding()
-                        ) {
-                            when (currentScreen) {
-                                AppScreen.MESSAGES -> {
-                                    QuantumTwoPaneLayout(
-                                        contacts = contacts,
-                                        activeContact = activeContact,
-                                        messages = activeMessages,
-                                        selfDestructDuration = selfDestructDuration,
-                                        onSelectContact = { contact -> chatViewModel.selectContact(contact) },
-                                        onDeleteContact = { contact -> chatViewModel.deleteContact(contact) },
-                                        onAcceptContact = { contact -> chatViewModel.acceptContact(contact) },
-                                        onSendMessage = { text -> chatViewModel.sendMessage(text) },
-                                        onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
-                                        onScanQr = { currentScreen = AppScreen.SCAN_QR },
-                                        onShowMyQr = { currentScreen = AppScreen.MY_QR },
-                                        onOpenDashboard = { currentScreen = AppScreen.DASHBOARD },
-                                        localUsername = currentUsername,
-                                        localProfileColor = currentProfileColor,
-                                        onUpdateProfile = { name, color -> chatViewModel.setProfile(name, color) }
-                                    )
-                                }
+                // Intercept back gesture in candybar mode to return to contacts
+                BackHandler(enabled = currentScreen == AppScreen.MESSAGES && activeContact != null) {
+                    chatViewModel.selectContact(null)
+                }
 
-                                AppScreen.MY_QR -> {
-                                    MyQrScreen(
-                                        handshakeManager = chatViewModel.handshakeManager,
-                                        localUid = chatViewModel.localUid,
-                                        localOnion = chatViewModel.localOnion,
-                                        localUsername = currentUsername,
-                                        localProfileColor = currentProfileColor,
-                                        onBack = { currentScreen = AppScreen.MESSAGES }
-                                    )
-                                }
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = VoidBackground
+                ) { innerPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .consumeWindowInsets(innerPadding)
+                            .imePadding()
+                    ) {
+                        when (currentScreen) {
+                            AppScreen.INITIALIZE_IDENTITY -> {
+                                EditProfileScreen(
+                                    initialUsername = currentUsername,
+                                    initialColorHex = currentProfileColor,
+                                    onConfirm = { chosenName, chosenColor ->
+                                        chatViewModel.setProfile(chosenName, chosenColor)
+                                        // One-way forward transition: popUpTo root (inclusive = true), navigating permanently to MESSAGES
+                                        currentScreen = AppScreen.MESSAGES
+                                    }
+                                )
+                            }
 
-                                AppScreen.SCAN_QR -> {
-                                    QrScannerView(
-                                        handshakeManager = chatViewModel.handshakeManager,
-                                        onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
-                                            chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
-                                            currentScreen = AppScreen.MESSAGES
-                                        },
-                                        onTransferDetected = { payload ->
-                                            chatViewModel.localTransferManager.startImportClient(payload)
-                                            currentScreen = AppScreen.DEVICE_TRANSFER
-                                        },
-                                        onBack = { currentScreen = AppScreen.MESSAGES }
-                                    )
-                                }
+                            AppScreen.MESSAGES -> {
+                                QuantumTwoPaneLayout(
+                                    contacts = contacts,
+                                    activeContact = activeContact,
+                                    messages = activeMessages,
+                                    selfDestructDuration = selfDestructDuration,
+                                    onSelectContact = { contact -> chatViewModel.selectContact(contact) },
+                                    onDeleteContact = { contact -> chatViewModel.deleteContact(contact) },
+                                    onAcceptContact = { contact -> chatViewModel.acceptContact(contact) },
+                                    onSendMessage = { text -> chatViewModel.sendMessage(text) },
+                                    onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
+                                    onHandshake = { currentScreen = AppScreen.HANDSHAKE },
+                                    onOpenSettings = { currentScreen = AppScreen.SETTINGS },
+                                    onScanQr = { currentScreen = AppScreen.HANDSHAKE },
+                                    onShowMyQr = { currentScreen = AppScreen.HANDSHAKE },
+                                    onOpenDashboard = { currentScreen = AppScreen.SETTINGS },
+                                    localUsername = currentUsername,
+                                    localProfileColor = currentProfileColor,
+                                    onUpdateProfile = null,
+                                    isPrivacyBlurEnabled = isPrivacyBlurEnabled
+                                )
+                            }
 
-                                AppScreen.DASHBOARD -> {
-                                    QuantumDashboardScreen(
-                                        threats = activeThreats,
-                                        localUsername = currentUsername,
-                                        onBack = { currentScreen = AppScreen.MESSAGES },
-                                        onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER }
-                                    )
-                                }
+                            AppScreen.HANDSHAKE -> {
+                                MutualHandshakeScreen(
+                                    chatViewModel = chatViewModel,
+                                    localUsername = currentUsername,
+                                    localProfileColor = currentProfileColor,
+                                    onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
+                                        chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
+                                        currentScreen = AppScreen.MESSAGES
+                                    },
+                                    onTransferDetected = { payload ->
+                                        chatViewModel.localTransferManager.startImportClient(payload)
+                                        currentScreen = AppScreen.DEVICE_TRANSFER
+                                    },
+                                    onBack = { currentScreen = AppScreen.MESSAGES },
+                                    onSettingsClick = { currentScreen = AppScreen.SETTINGS }
+                                )
+                            }
 
-                                AppScreen.DEVICE_TRANSFER -> {
-                                    DeviceTransferScreen(
-                                        chatViewModel = chatViewModel,
-                                        onBack = { currentScreen = AppScreen.MESSAGES },
-                                        onScanQrForImport = { currentScreen = AppScreen.SCAN_QR }
-                                    )
-                                }
+                            AppScreen.SETTINGS, AppScreen.DASHBOARD -> {
+                                SettingsScreen(
+                                    threats = activeThreats,
+                                    localUsername = currentUsername,
+                                    onBack = { currentScreen = AppScreen.MESSAGES },
+                                    onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER },
+                                    isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+                                    onTogglePrivacyBlur = { isPrivacyBlurEnabled = it }
+                                )
+                            }
+
+                            AppScreen.MY_QR -> {
+                                MyQrScreen(
+                                    handshakeManager = chatViewModel.handshakeManager,
+                                    localUid = chatViewModel.localUid,
+                                    localOnion = chatViewModel.localOnion,
+                                    localUsername = currentUsername,
+                                    localProfileColor = currentProfileColor,
+                                    onBack = { currentScreen = AppScreen.MESSAGES }
+                                )
+                            }
+
+                            AppScreen.SCAN_QR -> {
+                                QrScannerView(
+                                    handshakeManager = chatViewModel.handshakeManager,
+                                    onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
+                                        chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
+                                        currentScreen = AppScreen.MESSAGES
+                                    },
+                                    onTransferDetected = { payload ->
+                                        chatViewModel.localTransferManager.startImportClient(payload)
+                                        currentScreen = AppScreen.DEVICE_TRANSFER
+                                    },
+                                    onBack = { currentScreen = AppScreen.MESSAGES }
+                                )
+                            }
+
+                            AppScreen.DEVICE_TRANSFER -> {
+                                DeviceTransferScreen(
+                                    chatViewModel = chatViewModel,
+                                    onBack = { currentScreen = AppScreen.MESSAGES },
+                                    onScanQrForImport = { currentScreen = AppScreen.HANDSHAKE }
+                                )
                             }
                         }
                     }
@@ -371,220 +418,4 @@ class MainActivity : ComponentActivity() {
             chatViewModel.selectContactByUid(contactUid)
         }
     }
-}
-
-@Composable
-fun QuantumDashboardScreen(
-    threats: List<SecurityEvent>,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    localUsername: String = "",
-    onDeviceTransfer: () -> Unit = {}
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(VoidBackground)
-            .padding(20.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        // App header with Back button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = QuantumCyan
-                    )
-                }
-                Column {
-                    Text(
-                        text = "ENTANGL CONSOLE",
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        letterSpacing = 3.sp,
-                        color = QuantumCyan
-                    )
-                    Text(
-                        text = "QUANTUM-RESISTANT ZERO-KNOWLEDGE P2P",
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 9.sp,
-                        letterSpacing = 1.sp,
-                        color = SubatomicGray
-                    )
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(if (threats.isEmpty()) QuantumGreen else IsotopeMagenta)
-            )
-        }
-
-        // Security Status Card
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(DarkMatter)
-                .border(1.dp, ParticleBorder, RoundedCornerShape(12.dp))
-                .padding(16.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "CORE PROTOCOL MATRIX",
-                        fontFamily = QuantumMonospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = QuantumCyan
-                    )
-                    Text(
-                        text = if (threats.isEmpty()) "SECURE" else "WARNING",
-                        fontFamily = QuantumMonospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (threats.isEmpty()) QuantumGreen else IsotopeMagenta
-                    )
-                }
-
-                SecurityRow(label = "ASYMMETRIC IDENTITY", value = "Ed25519 (Hardware Keystore)")
-                SecurityRow(label = "POST-QUANTUM KEM", value = "ML-KEM-768 (PQXDH)")
-                SecurityRow(label = "FORWARD SECRECY", value = "Double Ratchet + HMAC-SHA256")
-                SecurityRow(label = "STORAGE ENCRYPTION", value = "SQLCipher + Double-Encrypted")
-                SecurityRow(label = "MEMORY ZEROIZATION", value = "Off-Heap NativeKeyBuffer")
-                SecurityRow(label = "ACTIVE CODENAME", value = localUsername.ifBlank { "Anonymous Node" })
-                SecurityRow(label = "DISPLAY INTEGRITY", value = "FLAG_SECURE + Obscured Touch Filter")
-                SecurityRow(label = "ZERO LEAK NOTIFICATION", value = "VISIBILITY_SECRET Enforced")
-            }
-        }
-
-        // Device Migration & Succession Card
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(DarkMatter)
-                .border(1.dp, ParticleBorder, RoundedCornerShape(12.dp))
-                .padding(16.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "DEVICE SUCCESSION & MIGRATION",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = QuantumCyan
-                )
-                Text(
-                    text = "Transfer account, contacts, and message history to a new device over local encrypted P2P with hardware identity succession and atomic decommissioning.",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    color = SubatomicGray
-                )
-                Button(
-                    onClick = onDeviceTransfer,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = QuantumCyan,
-                        contentColor = Color.Black
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwapHoriz,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "OPEN DEVICE TRANSFER",
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-        }
-
-        // Active threat indicator if any detected
-        if (threats.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(DarkMatterVariant)
-                    .border(1.dp, IsotopeMagenta, RoundedCornerShape(10.dp))
-                    .padding(14.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "ENVIRONMENT ANOMALIES DETECTED",
-                        fontFamily = QuantumMonospace,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = IsotopeMagenta
-                    )
-                    threats.forEach { threat ->
-                        Text(
-                            text = "• ${threat::class.simpleName}",
-                            fontFamily = QuantumMonospace,
-                            fontSize = 11.sp,
-                            color = NeutronWhite
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Text(
-            text = "ENTANGL v1.0.0 — ALL SYSTEMS NOMINAL",
-            fontFamily = QuantumMonospace,
-            fontSize = 10.sp,
-            color = SubatomicGray,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-    }
-}
-
-@Composable
-private fun SecurityRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            fontFamily = QuantumMonospace,
-            fontSize = 11.sp,
-            color = SubatomicGray
-        )
-        Text(
-            text = value,
-            fontFamily = QuantumMonospace,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = NeutronWhite
-        )
-    }
-}
+}

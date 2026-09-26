@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -47,6 +48,7 @@ import androidx.compose.ui.window.DialogProperties
 import `in`.grayscales.entangl.core.identity.NodeIdentityManager
 import `in`.grayscales.entangl.ui.common.CyberColorPicker
 import `in`.grayscales.entangl.ui.theme.ColorUtils
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -112,7 +114,7 @@ fun EditProfileDialog(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "EDIT NODE PROFILE",
+                            text = "INITIALIZE IDENTITY",
                             fontFamily = QuantumMonospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
@@ -245,7 +247,7 @@ fun EditProfileDialog(
                             .height(44.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = parsedColor,
-                            contentColor = if (selectedColorHex.equals("#FFE600", ignoreCase = true)) Color.Black else Color.Black,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
                             disabledContainerColor = DarkMatterVariant,
                             disabledContentColor = SubatomicGray
                         ),
@@ -254,13 +256,15 @@ fun EditProfileDialog(
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onPrimary
                         )
                         Text(
                             text = " APPLY",
                             fontFamily = QuantumMonospace,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
