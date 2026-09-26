@@ -26,6 +26,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -260,22 +261,24 @@ fun SettingsScreen(
                     onClick = onDeviceTransfer,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = QuantumCyan,
-                        contentColor = CyberDark
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.SwapHoriz,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "OPEN DEVICE TRANSFER",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
             }

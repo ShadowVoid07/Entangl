@@ -51,6 +51,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -401,22 +402,24 @@ fun ChatScreen(
                             onClick = { onAcceptContact?.invoke() },
                             modifier = Modifier.weight(1.2f),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = QuantumCyan,
-                                contentColor = Color.Black
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Accept",
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
 
@@ -478,8 +481,8 @@ fun ChatScreen(
                         Button(
                             onClick = onShowMyQr,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = QuantumCyan,
-                                contentColor = Color.Black
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(6.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
@@ -487,14 +490,16 @@ fun ChatScreen(
                             Icon(
                                 imageVector = Icons.Default.QrCode,
                                 contentDescription = null,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "SHARE QR",
                                 fontFamily = QuantumMonospace,
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }
@@ -689,10 +694,19 @@ private fun NetworkInfoDialog(
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = QuantumCyan, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text(text = "CLOSE", fontFamily = QuantumMonospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(
+                        text = "CLOSE",
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         }

@@ -20,6 +20,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -126,8 +127,8 @@ fun SafetyNumberDialog(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = QuantumCyan,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
@@ -135,7 +136,8 @@ fun SafetyNumberDialog(
                         text = "VERIFIED SECURE",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
             }

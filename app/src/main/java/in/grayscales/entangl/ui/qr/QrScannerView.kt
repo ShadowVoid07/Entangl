@@ -39,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -177,8 +178,8 @@ fun QrScannerView(
                 Button(
                     onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = QuantumCyan,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -187,7 +188,8 @@ fun QrScannerView(
                         text = "AUTHORIZE OPTICAL SENSOR",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
 
