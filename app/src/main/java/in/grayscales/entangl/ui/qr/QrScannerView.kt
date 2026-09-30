@@ -396,7 +396,7 @@ fun QrScannerView(
         // Futuristic Quantum Reticle HUD Overlay
         QuantumScannerOverlay(isTargetLocked = isTargetLocked)
 
-        // Top Control Bar (Aligned to end, redundant back arrow removed)
+        // Top Control Bar (torch + lens toggles, aligned to end)
         Row(
             modifier = Modifier
                 .fillMaxWidth()

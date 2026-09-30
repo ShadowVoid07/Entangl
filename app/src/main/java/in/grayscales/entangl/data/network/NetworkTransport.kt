@@ -721,11 +721,9 @@ class NetworkTransport(
 
         log("Dispatched incoming envelope: id=${envelope.id}, type=${envelope.type}, from=${envelope.senderUid}")
 
-        // ACKs fan out to BOTH paths: legacy ack callbacks (kept for API compat)
-        // and normal listeners so MessageRepositoryImpl can signature-verify the
-        // envelope and confirm the message is really ours before marking DELIVERED.
-        // Previously ACKs bypassed all verification — any relay observer could forge
-        // DELIVERED receipts with a bare message id.
+        // ACKs fan out to BOTH paths: ack callbacks (transport API surface)
+        // and normal listeners, where signature, age, and key-pinning gate every
+        // DELIVERED marking to verified envelopes for our own outgoing rows.
         if (envelope.type == TransportEnvelope.TYPE_DELIVERY_ACK) {
             val ackCallbacks = synchronized(ackListeners) { ackListeners.toList() }
             for (cb in ackCallbacks) {
