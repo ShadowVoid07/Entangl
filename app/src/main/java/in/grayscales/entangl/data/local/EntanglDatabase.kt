@@ -13,8 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import `in`.grayscales.entangl.data.local.converter.CryptoTypeConverters
 import `in`.grayscales.entangl.data.local.dao.ContactDao
 import `in`.grayscales.entangl.data.local.dao.MessageDao
+import `in`.grayscales.entangl.data.local.dao.ProcessedEnvelopeDao
 import `in`.grayscales.entangl.data.local.entity.ContactEntity
 import `in`.grayscales.entangl.data.local.entity.MessageEntity
+import `in`.grayscales.entangl.data.local.entity.ProcessedEnvelope
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -23,8 +25,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 @Database(
-    entities = [ContactEntity::class, MessageEntity::class],
-    version = 4,
+    entities = [ContactEntity::class, MessageEntity::class, ProcessedEnvelope::class],
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(CryptoTypeConverters::class)
@@ -32,6 +34,7 @@ abstract class EntanglDatabase : RoomDatabase() {
 
     abstract fun contactDao(): ContactDao
     abstract fun messageDao(): MessageDao
+    abstract fun processedEnvelopeDao(): ProcessedEnvelopeDao
 
     companion object {
         private const val DB_NAME = "entangl_vault.db"
@@ -80,6 +83,16 @@ abstract class EntanglDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Exactly-once envelope processing (kills replay re-notifications).
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS processed_envelopes " +
+                        "(dedupKey TEXT NOT NULL PRIMARY KEY, timestamp INTEGER NOT NULL)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: EntanglDatabase? = null
 
@@ -100,8 +113,10 @@ abstract class EntanglDatabase : RoomDatabase() {
                 DB_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                .fallbackToDestructiveMigration(true)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                // Forward-migration failures crash loudly; destructive fallback applies
+                // to downgrades only, where the newer schema is genuinely unreadable.
+                .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 .build()
         }
 

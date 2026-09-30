@@ -1,6 +1,5 @@
 package `in`.grayscales.entangl.ui.settings
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -27,8 +26,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -44,9 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.core.security.SecurityEvent
 import `in`.grayscales.entangl.ui.theme.ColorUtils
-import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
-import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
@@ -71,9 +66,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     localUsername: String = "",
     localProfileColor: String = "",
-    onDeviceTransfer: () -> Unit = {},
-    isPrivacyBlurEnabled: Boolean = true,
-    onTogglePrivacyBlur: (Boolean) -> Unit = {}
+    onDeviceTransfer: () -> Unit = {}
 ) {
     var showNetworkSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -233,63 +226,7 @@ fun SettingsScreen(
             }
         }
 
-        // 2. Anti-Shoulder-Surfing Privacy Shield Card
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(DarkMatter)
-                .border(1.dp, ParticleBorder, RoundedCornerShape(12.dp))
-                .padding(16.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "ANTI-SHOULDER-SURFING SHIELD",
-                            fontFamily = QuantumMonospace,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = QuantumCyan
-                        )
-                        Text(
-                            text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                "8.dp Gaussian blur active (Hold row to reveal)"
-                            } else {
-                                "Solid 90% black box fallback (API < 31)"
-                            },
-                            fontFamily = QuantumMonospace,
-                            fontSize = 9.sp,
-                            color = SubatomicGray
-                        )
-                    }
-                    Switch(
-                        checked = isPrivacyBlurEnabled,
-                        onCheckedChange = onTogglePrivacyBlur,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = CyberDark,
-                            checkedTrackColor = QuantumCyan,
-                            uncheckedThumbColor = SubatomicGray,
-                            uncheckedTrackColor = DarkMatterVariant
-                        )
-                    )
-                }
-
-                Text(
-                    text = "Obfuscates message preview text in contact rows against physical eavesdroppers. Hold down any conversation row to temporarily reveal the plaintext.",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    color = SubatomicGray
-                )
-            }
-        }
-
-        // 3. Device Migration & Succession Card
+        // 2. Device Migration & Succession Card
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -387,6 +324,17 @@ fun SettingsScreen(
                 }
             }
         }
+
+        // Release footer: version name sourced from app/build.gradle.kts via BuildConfig.
+        Text(
+            text = "Build: ${`in`.grayscales.entangl.BuildConfig.VERSION_NAME}",
+            fontFamily = QuantumMonospace,
+            fontSize = 10.sp,
+            letterSpacing = 1.sp,
+            color = SubatomicGray,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 

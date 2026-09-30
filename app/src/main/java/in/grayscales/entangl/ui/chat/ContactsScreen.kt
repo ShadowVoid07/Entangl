@@ -34,10 +34,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.R
 import `in`.grayscales.entangl.domain.model.Contact
+import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.ui.home.ChatListRow
 import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
@@ -75,14 +79,24 @@ fun ContactsScreen(
     localUsername: String = "",
     localProfileColor: String = "",
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
-    isPrivacyBlurEnabled: Boolean = true,
     onClearChat: (Contact) -> Unit = {},
-    onBlockToggle: (Contact) -> Unit = {}
+    onBlockToggle: (Contact) -> Unit = {},
+    lastMessages: Map<String, Message?> = emptyMap()
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var pendingContactToIgnore by remember { mutableStateOf<Contact?>(null) }
     var optionsContact by remember { mutableStateOf<Contact?>(null) }
     var contactToDelete by remember { mutableStateOf<Contact?>(null) }
+
+    // Presence clock: re-evaluates liveness dots as peers go quiet. Cheap —
+    // one recomposition per 30s, no per-row timers.
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
 
     if (pendingContactToIgnore != null) {
         DeleteContactConfirmDialog(
@@ -343,8 +357,9 @@ fun ContactsScreen(
                         contact = contact,
                         isSelected = contact.uid == selectedContactUid,
                         onClick = { onSelectContact(contact) },
-                        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
-                        onOptionsClick = { optionsContact = contact }
+                        lastMessage = lastMessages[contact.uid],
+                        onOptionsClick = { optionsContact = contact },
+                        nowMillis = nowMillis
                     )
                 }
             }
@@ -460,7 +475,8 @@ private fun PendingConnectionCard(
                         text = "Verify & scan",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        color = CyberDark
                     )
                 }
 

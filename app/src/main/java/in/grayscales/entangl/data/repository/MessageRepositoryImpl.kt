@@ -7,16 +7,20 @@ import `in`.grayscales.entangl.core.crypto.SuccessionCertificate
 import `in`.grayscales.entangl.core.identity.NodeIdentityManager
 import `in`.grayscales.entangl.data.local.dao.ContactDao
 import `in`.grayscales.entangl.data.local.dao.MessageDao
+import `in`.grayscales.entangl.data.local.dao.ProcessedEnvelopeDao
 import `in`.grayscales.entangl.data.local.entity.ContactEntity
 import `in`.grayscales.entangl.data.local.entity.MessageEntity
+import `in`.grayscales.entangl.data.local.entity.ProcessedEnvelope
 import `in`.grayscales.entangl.data.network.NetworkTransport
 import `in`.grayscales.entangl.data.network.TransportEnvelope
 import `in`.grayscales.entangl.data.notification.EntanglNotificationManager
+import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.domain.repository.MessageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -36,7 +40,8 @@ class MessageRepositoryImpl(
     private val networkTransport: NetworkTransport,
     private val nodeIdentityManager: NodeIdentityManager,
     private val notificationManager: EntanglNotificationManager,
-    private val keyPairGenerator: KeyPairGenerator? = null
+    private val keyPairGenerator: KeyPairGenerator? = null,
+    private val processedEnvelopeDao: ProcessedEnvelopeDao? = null
 ) : MessageRepository {
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -60,9 +65,7 @@ class MessageRepositoryImpl(
     init {
         // 1. Listen for Incoming Messages (ACKs included: dispatch fans them out to
         // normal listeners so the verified TYPE_DELIVERY_ACK branch below — signature,
-        // age, key-pinning — gates every DELIVERED marking. The old unverified
-        // ackListener path is intentionally NOT registered: forged relay ACKs must
-        // never flip delivery state.)
+        // age, key-pinning — gates every DELIVERED marking.)
         networkTransport.addListener { envelope ->
             handleIncomingEnvelope(envelope)
         }
@@ -72,6 +75,12 @@ class MessageRepositoryImpl(
 
         // 3. Retry any failed outgoing messages + incomplete handshakes
         scope.launch {
+            try {
+                processedEnvelopeDao?.pruneOlderThan(
+                    System.currentTimeMillis() - ENVELOPE_MAX_AGE_MS
+                )
+            } catch (_: Exception) {
+            }
             retryFailedMessages()
         }
     }
@@ -94,13 +103,18 @@ class MessageRepositoryImpl(
             }
             return
         }
+        // Presence freshness: only live traffic (not 24h backlog replays) advances
+        // lastSeenAt. Timestamp is signature-covered, and this runs post-verification,
+        // so only the true peer can refresh its own presence.
+        val freshActivity = envelopeAge >= -ENVELOPE_TIME_DRIFT_MS &&
+            envelopeAge <= Contact.PRESENCE_ACTIVE_WINDOW_MS
 
         // Authenticate envelope cryptographic signature (SEC-NET-04)
         val kpg = keyPairGenerator
         if (kpg != null) {
             if (envelope.signature.isEmpty()) {
                 if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
-                    Log.w("MessageRepository", "Dropping unsigned envelope ${envelope.id} (type=${envelope.type}) from $senderUid")
+                    Log.d("MessageRepository", "Dropping unsigned envelope (type=${envelope.type})")
                 }
                 return
             }
@@ -108,7 +122,7 @@ class MessageRepositoryImpl(
             val senderPub = envelope.senderIdentityPub
             if (senderPub.isEmpty()) {
                 if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
-                    Log.w("MessageRepository", "Dropping envelope ${envelope.id} with empty sender public key")
+                    Log.d("MessageRepository", "Dropping envelope with empty sender public key")
                 }
                 return
             }
@@ -117,7 +131,7 @@ class MessageRepositoryImpl(
             if (existingContact != null && existingContact.publicKey.isNotEmpty()) {
                 if (envelope.type != TransportEnvelope.TYPE_IDENTITY_ROTATION && !existingContact.publicKey.contentEquals(senderPub)) {
                     if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
-                        Log.e("MessageRepository", "Spoofing rejected: Sender public key does not match trusted key for $senderUid")
+                        Log.d("MessageRepository", "Spoofing rejected: sender key mismatch")
                     }
                     return
                 }
@@ -135,7 +149,7 @@ class MessageRepositoryImpl(
 
             if (!isSignatureValid) {
                 if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
-                    Log.e("MessageRepository", "Signature verification FAILED for envelope ${envelope.id} from $senderUid — packet dropped!")
+                    Log.d("MessageRepository", "Signature verification FAILED — packet dropped")
                 }
                 return
             }
@@ -144,6 +158,24 @@ class MessageRepositoryImpl(
         if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
             Log.d("MessageRepository", "handleIncomingEnvelope: type=${envelope.type}, senderUid=$senderUid")
         }
+
+        // Exactly-once processing: relays replay 24h of history on every fresh
+        // start and in-memory dedup dies with the process. Without this gate,
+        // each restart re-fired scan/message notifications and ACK storms for
+        // long-seen envelopes. Recorded in SQLCipher so it survives restarts;
+        // pruned past relay retention. Runs post-auth so forgeries never pollute it.
+        val dedupKey = ProcessedEnvelope.keyOf(envelope.type, envelope.id)
+        val processedDao = processedEnvelopeDao
+        if (processedDao != null) {
+            if (processedDao.exists(dedupKey)) {
+                return
+            }
+            processedDao.insertIgnore(ProcessedEnvelope(dedupKey, now))
+        }
+
+        // Notify only for live arrivals: stale backlog (first-seen but old) is still
+        // learned from silently. Freshness uses the signature-covered timestamp.
+        val notifyLive = freshActivity
 
         // Anti-replay: skip if already processed and stored in database
         if (envelope.type == TransportEnvelope.TYPE_MESSAGE && messageDao.existsById(envelope.id)) {
@@ -166,6 +198,14 @@ class MessageRepositoryImpl(
             TransportEnvelope.TYPE_IDENTITY_ROTATION -> {
                 val cert = SuccessionCertificate.fromByteArray(envelope.ciphertext)
                 if (cert != null && kpg != null && SuccessionCertificate.verify(cert, kpg)) {
+                    // Freshness bound: rotations are created live during LAN migration.
+                    // Stale captures replayed days later (or pre-dated forgeries) are
+                    // rejected instead of forcing key updates. Window is generous on
+                    // purpose — offline peers may relay with delay.
+                    val certAge = now - cert.timestampMs
+                    if (certAge > SUCCESSION_MAX_AGE_MS || certAge < -ENVELOPE_TIME_DRIFT_MS) {
+                        return
+                    }
                     val existing = contactDao.getByUid(senderUid)
                     if (existing != null) {
                         try {
@@ -176,11 +216,11 @@ class MessageRepositoryImpl(
                                 contactDao.insertOrUpdate(updated)
                                 cryptoManager.initializeSession(senderUid, newPubBytes, existing.onionAddress)
                                 if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
-                                    Log.i("MessageRepository", "Successfully rotated key for $senderUid via verified SuccessionCertificate")
+                                    Log.d("MessageRepository", "Rotated key via verified SuccessionCertificate")
                                 }
                             } else {
                                 if (`in`.grayscales.entangl.BuildConfig.DEBUG) {
-                                    Log.w("MessageRepository", "Ignored rotation cert: old key mismatch for $senderUid")
+                                    Log.d("MessageRepository", "Ignored rotation cert: old key mismatch")
                                 }
                             }
                         } catch (e: Exception) {
@@ -195,10 +235,49 @@ class MessageRepositoryImpl(
                 // reciprocal scan arrives within seconds of our own outbound scan, and
                 // returning early here would lose hasBeenScanned and stall mutual forever.
                 if (existing != null && (now - (existing.lastSeenAt ?: 0)) < 30_000L) {
-                    if (!existing.hasBeenScanned) {
+                    // Same key-pinning gate as the main branch: a mismatched envelope
+                    // key must never plant inbound proof for an optically verified peer.
+                    if (existing.publicKey.isNotEmpty() &&
+                        envelope.senderIdentityPub.isNotEmpty() &&
+                        !existing.publicKey.contentEquals(envelope.senderIdentityPub) &&
+                        existing.hasScannedPeer
+                    ) {
+                        return
+                    }
+                    val newlyLearned = !existing.hasBeenScanned
+                    if (newlyLearned) {
                         contactDao.insertOrUpdate(
-                            existing.copy(hasBeenScanned = true, lastSeenAt = envelope.timestamp)
+                            existing.copy(
+                                hasBeenScanned = true,
+                                lastSeenAt = if (freshActivity) now else existing.lastSeenAt
+                            )
                         )
+                    }
+                    // Fast path must converge exactly like the main branch: this is the
+                    // NORMAL back-to-back case (ping arrives seconds after our scan), and
+                    // skipping unlock/echo here stranded mutual with both flags set.
+                    if (newlyLearned && existing.hasScannedPeer &&
+                        !existing.safetyNumber.startsWith("Pending") &&
+                        existing.publicKey.isNotEmpty()
+                    ) {
+                        try {
+                            cryptoManager.initializeSession(senderUid, existing.publicKey, existing.onionAddress)
+                            unlockPendingMessages(senderUid)
+                            contactDao.insertOrUpdate(
+                                existing.copy(
+                                    isAccepted = true,
+                                    hasBeenScanned = true,
+                                    lastSeenAt = if (freshActivity) now else existing.lastSeenAt
+                                )
+                            )
+                        } catch (e: Exception) {
+                            Log.w("MessageRepository", "Auto-unlock on fast-path ping failed: ${e.message}")
+                        }
+                    }
+                    if (existing.hasScannedPeer && !existing.isBlocked) {
+                        scope.launch {
+                            echoScanPing(senderUid)
+                        }
                     }
                     return
                 }
@@ -226,7 +305,7 @@ class MessageRepositoryImpl(
                     displayName = displayName,
                     publicKey = if (envelope.senderIdentityPub.isNotEmpty()) envelope.senderIdentityPub else existing.publicKey,
                     onionAddress = if (envelope.senderOnion.isNotBlank()) envelope.senderOnion else existing.onionAddress,
-                    lastSeenAt = envelope.timestamp,
+                    lastSeenAt = if (freshActivity) now else existing.lastSeenAt,
                     isAccepted = wasAccepted,
                     profileColor = profileColor ?: existing.profileColor,
                     hasBeenScanned = true
@@ -237,7 +316,7 @@ class MessageRepositoryImpl(
                     safetyNumber = "Pending reciprocal verification",
                     displayName = displayName,
                     createdAt = System.currentTimeMillis(),
-                    lastSeenAt = envelope.timestamp,
+                    lastSeenAt = if (freshActivity) now else envelope.timestamp,
                     isAccepted = false,
                     profileColor = profileColor,
                     hasScannedPeer = false,
@@ -265,7 +344,9 @@ class MessageRepositoryImpl(
                         echoScanPing(senderUid)
                     }
                 }
-                notificationManager.showScanPingNotification(senderUid, displayName)
+                if (notifyLive) {
+                    notificationManager.showScanPingNotification(senderUid, displayName)
+                }
             }
 
             TransportEnvelope.TYPE_SCAN_ACCEPT -> {
@@ -285,7 +366,7 @@ class MessageRepositoryImpl(
                         isAccepted = false,
                         publicKey = updatedPub,
                         profileColor = profileColor ?: existing.profileColor,
-                        lastSeenAt = envelope.timestamp
+                        lastSeenAt = if (freshActivity) now else existing.lastSeenAt
                     )
                 } else {
                     ContactEntity(
@@ -295,7 +376,7 @@ class MessageRepositoryImpl(
                         safetyNumber = "Pending reciprocal verification",
                         displayName = peerName,
                         createdAt = envelope.timestamp,
-                        lastSeenAt = envelope.timestamp,
+                        lastSeenAt = if (freshActivity) now else envelope.timestamp,
                         isAccepted = false, // Must remain false until local user verifies
                         profileColor = profileColor,
                         hasScannedPeer = false,
@@ -306,7 +387,10 @@ class MessageRepositoryImpl(
 
                 // Do NOT init session here — wait for mutual optical + safety confirm.
                 // Surface as ping receipt so user stays on handshake profile to scan back.
-                notificationManager.showScanPingNotification(senderUid, peerName)
+                // Stale backlog replays stay silent (state still learned above).
+                if (notifyLive) {
+                    notificationManager.showScanPingNotification(senderUid, peerName)
+                }
 
                 // 2. Insert an in-chat status notice in the conversation stream
                 val noticeId = "accept-${envelope.id}"
@@ -332,6 +416,11 @@ class MessageRepositoryImpl(
                 val incomingSelfDestructAt = envelope.ttlMs?.let { now + it }
 
                 if (contactEntity != null && contactEntity.isAccepted) {
+                    // Fresh verified traffic proves the peer is live right now
+                    // (independent of decrypt outcome) — the sole writer of presence.
+                    if (freshActivity) {
+                        contactDao.updateLastSeen(senderUid, now)
+                    }
                     // Established and accepted contact!
                     // decryptWithHeal: a peer restart/rescan resets their counters to
                     // genesis while ours advanced. Only the true peer holds a
@@ -352,7 +441,7 @@ class MessageRepositoryImpl(
                             selfDestructAt = incomingSelfDestructAt
                         )
                         messageDao.insertOrUpdate(entity)
-                        if (!notificationManager.isForegroundContact(senderUid)) {
+                        if (notifyLive && !notificationManager.isForegroundContact(senderUid)) {
                             notificationManager.showIncomingMessageNotification(senderUid)
                         }
 
@@ -621,7 +710,7 @@ class MessageRepositoryImpl(
                 localProfileColor = nodeIdentityManager.profileColor
             )
         } catch (e: Exception) {
-            Log.w("MessageRepository", "Scan echo to $recipientUid failed: ${e.message}")
+            Log.d("MessageRepository", "Scan echo failed: ${e.message}")
         }
     }
 
@@ -643,41 +732,49 @@ class MessageRepositoryImpl(
     }
 
     override fun observeForContact(contactUid: String): Flow<List<Message>> {
+        // Heavy crypto runs on IO: mapping full history on Main janked chat open.
         return messageDao.observeForContact(contactUid).map { entities ->
             entities.map { entity ->
-                val cached = decryptedCache[entity.id]
-                val plaintext = if (cached != null && cached != "Encrypted message") {
-                    cached
-                } else {
-                    if (entity.id.startsWith("accept-") || entity.id.startsWith("status-") || entity.id.startsWith("system-")) {
-                        val rawNotice = try {
-                            entity.ciphertext.decodeToString()
-                        } catch (_: Exception) {
-                            "Notice"
-                        }
-                        if (rawNotice == NOTICE_PAYLOAD_SCAN_ACCEPT) {
-                            val contact = contactDao.getByUid(contactUid)
-                            val name = contact?.displayName?.ifBlank { null } ?: "Peer"
-                            val resolved = "$name accepted your connection request"
-                            cachePlaintext(entity.id, resolved)
-                            resolved
-                        } else {
-                            val resolved = rawNotice.ifBlank { "Notice" }
-                            cachePlaintext(entity.id, resolved)
-                            resolved
-                        }
-                    } else {
-                        try {
-                            val decrypted = cryptoManager.decryptMessage(contactUid, entity.ciphertext).decodeToString()
-                            cachePlaintext(entity.id, decrypted)
-                            decrypted
-                        } catch (_: Exception) {
-                            "Encrypted message"
-                        }
-                    }
-                }
-                entity.toDomain(plaintext)
+                entity.toDomain(resolvePlaintext(contactUid, entity))
             }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun observeLastMessage(contactUid: String): Flow<Message?> {
+        // Roster preview decrypts ONE row instead of full history.
+        return messageDao.observeLatestForContact(contactUid).map { entity ->
+            entity?.toDomain(resolvePlaintext(contactUid, entity))
+        }.flowOn(Dispatchers.IO)
+    }
+
+    private suspend fun resolvePlaintext(contactUid: String, entity: MessageEntity): String {
+        val cached = decryptedCache[entity.id]
+        if (cached != null && cached != "Encrypted message") {
+            return cached
+        }
+        if (entity.id.startsWith("accept-") || entity.id.startsWith("status-") || entity.id.startsWith("system-")) {
+            val rawNotice = try {
+                entity.ciphertext.decodeToString()
+            } catch (_: Exception) {
+                "Notice"
+            }
+            if (rawNotice == NOTICE_PAYLOAD_SCAN_ACCEPT) {
+                val contact = contactDao.getByUid(contactUid)
+                val name = contact?.displayName?.ifBlank { null } ?: "Peer"
+                val resolved = "$name accepted your connection request"
+                cachePlaintext(entity.id, resolved)
+                return resolved
+            }
+            val resolved = rawNotice.ifBlank { "Notice" }
+            cachePlaintext(entity.id, resolved)
+            return resolved
+        }
+        return try {
+            val decrypted = cryptoManager.decryptMessage(contactUid, entity.ciphertext).decodeToString()
+            cachePlaintext(entity.id, decrypted)
+            decrypted
+        } catch (_: Exception) {
+            "Encrypted message"
         }
     }
 
@@ -710,6 +807,8 @@ class MessageRepositoryImpl(
         private const val ENVELOPE_MAX_AGE_MS = 24 * 60 * 60 * 1000L
         /** Maximum allowed clock drift into the future (15 minutes) */
         private const val ENVELOPE_TIME_DRIFT_MS = 15 * 60 * 1000L
+        /** Maximum age of a succession certificate (7 days) before rotation is rejected */
+        private const val SUCCESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L
         /** Non-identifying token stored in database ciphertext column for accepted connection notices (SEC-08) */
         private const val NOTICE_PAYLOAD_SCAN_ACCEPT = "STATUS_NOTICE:CONNECTION_ACCEPTED"
     }

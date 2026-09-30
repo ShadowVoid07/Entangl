@@ -31,9 +31,9 @@ fun QuantumTwoPaneLayout(
     localUsername: String = "",
     localProfileColor: String = "",
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
-    isPrivacyBlurEnabled: Boolean = true,
     onClearChat: (Contact) -> Unit = {},
     onBlockToggle: (Contact) -> Unit = {},
+    lastMessages: Map<String, Message?> = emptyMap(),
     onUnblockContact: () -> Unit = {},
     onMarkRead: () -> Unit = {},
     onDeleteMessage: (String) -> Unit = {}
@@ -57,9 +57,9 @@ fun QuantumTwoPaneLayout(
         localUsername = localUsername,
         localProfileColor = localProfileColor,
         onUpdateProfile = onUpdateProfile,
-        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
         onClearChat = onClearChat,
         onBlockToggle = onBlockToggle,
+        lastMessages = lastMessages,
         onUnblockContact = onUnblockContact,
         onMarkRead = onMarkRead,
         onDeleteMessage = onDeleteMessage

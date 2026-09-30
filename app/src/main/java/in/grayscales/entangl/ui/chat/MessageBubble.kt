@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -87,11 +88,17 @@ fun MessageBubble(
     modifier: Modifier = Modifier,
     isZeroizing: Boolean = false,
     onZeroized: () -> Unit = {},
-    onScanPeerQr: (() -> Unit)? = null
+    onScanPeerQr: (() -> Unit)? = null,
+    // Entrance choreography only for arrivals after chat open. History rows render
+    // instantly — replaying the tunnel animation down the whole backlog is the
+    // jank/strobe users reported.
+    animateEntrance: Boolean = true
 ) {
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(message.id) {
-        isVisible = true
+    var isVisible by remember(message.id, animateEntrance) { mutableStateOf(!animateEntrance) }
+    LaunchedEffect(message.id, animateEntrance) {
+        if (animateEntrance) {
+            isVisible = true
+        }
     }
 
     // Zeroization Glitch State
@@ -131,10 +138,14 @@ fun MessageBubble(
 
     AnimatedVisibility(
         visible = isVisible,
-        enter = fadeIn(animationSpec = tween(400)) + slideInVertically(
-            initialOffsetY = { it / 2 },
-            animationSpec = tween(400, easing = FastOutSlowInEasing)
-        ),
+        enter = if (animateEntrance) {
+            fadeIn(animationSpec = tween(400)) + slideInVertically(
+                initialOffsetY = { it / 2 },
+                animationSpec = tween(400, easing = FastOutSlowInEasing)
+            )
+        } else {
+            EnterTransition.None
+        },
         modifier = modifier
             .graphicsLayer {
                 translationX = glitchOffsetX * density
@@ -257,13 +268,7 @@ private fun UserMessageBubble(
             delay(1000L)
         }
     }
-    // Plan §4.1: holographic data frame — square-ish panel + neon edge rail.
-    val edgeColor = when {
-        isZeroizing -> IsotopeMagenta
-        isEncrypted -> IsotopeMagenta.copy(alpha = 0.7f)
-        isOutgoing -> QuantumCyan.copy(alpha = 0.6f)
-        else -> QuantumGreen.copy(alpha = 0.45f)
-    }
+    // Plan §4.1: holographic data frame — square-ish panel, tinted border.
     val frameShape = RoundedCornerShape(4.dp)
 
     Column(
@@ -294,7 +299,7 @@ private fun UserMessageBubble(
 
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.85f)
+                .fillMaxWidth(0.80f)
                 .clip(frameShape)
                 .background(bubbleColor)
                 .border(1.dp, borderColor, frameShape)
@@ -308,20 +313,13 @@ private fun UserMessageBubble(
                     )
                 }
         ) {
-            // Neon edge rail per plan §4.1 (left for incoming, right for outgoing).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .align(if (isOutgoing) Alignment.TopEnd else Alignment.TopStart)
-                        .size(width = 2.dp, height = 28.dp)
-                        .background(edgeColor)
-                )
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                 if (isEncrypted) {
@@ -331,9 +329,9 @@ private fun UserMessageBubble(
                     Text(
                         text = "[ " + message.plaintext + " ]",
                         fontFamily = QuantumMonospace,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = NeutronWhite,
-                        lineHeight = 19.sp
+                        lineHeight = 18.sp
                     )
                 }
 
@@ -479,14 +477,16 @@ private fun EncryptedMessagePlaceholder(
                     Icon(
                         imageVector = Icons.Default.QrCodeScanner,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(14.dp),
+                        tint = QuantumCyan
                     )
                     Text(
                         text = "SCAN PEER'S QR TO DECRYPT",
                         fontFamily = QuantumMonospace,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.5.sp,
+                        color = QuantumCyan
                     )
                 }
             }

@@ -68,6 +68,12 @@ class EntanglApplication : Application() {
                 if (--runningActivities <= 0) {
                     runningActivities = 0
                     networkTransport.setForeground(false)
+                    // An open chat is no longer visible: re-arm its notifications so
+                    // background arrivals buzz again instead of staying silent.
+                    try {
+                        get<`in`.grayscales.entangl.data.notification.EntanglNotificationManager>()
+                            .setForegroundContact(null)
+                    } catch (_: Exception) {}
                 }
             }
 

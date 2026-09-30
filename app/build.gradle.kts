@@ -5,6 +5,18 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+
+// Release signing comes from keystore.properties (gitignored, see
+// keystore.properties.example). Unsigned builds are used for local
+// verification; the publisher signs the Play bundle with the upload key.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().also { props ->
+    if (keystorePropsFile.exists()) {
+        keystorePropsFile.inputStream().use { stream -> props.load(stream) }
+    }
+}
+
 android {
     namespace = "in.grayscales.entangl"
     compileSdk = 37
@@ -12,13 +24,24 @@ android {
     defaultConfig {
         applicationId = "in.grayscales.entangl"
         minSdk = 28
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+            }
         }
     }
 
@@ -30,6 +53,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -101,6 +127,8 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    // NOTE: BOM repeated intentionally — androidTest needs its own platform scope
+    // for ui-test-junit4's version; the "declared multiple times" IDE hint is benign.
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

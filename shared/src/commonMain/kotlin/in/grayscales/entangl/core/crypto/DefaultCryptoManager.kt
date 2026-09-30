@@ -260,7 +260,9 @@ class DefaultCryptoManager(
     }
 
     override fun verifyRatchetIntegrity(contactUid: String): Boolean {
-        val sessionState = activeSessions[contactUid] ?: return true
+        // Fail closed: no session means nothing to vouch for. Callers treat false
+        // as "not verified" (e.g. success dialog stays silent) rather than trusting.
+        val sessionState = activeSessions[contactUid] ?: return false
         return ratchetStateVerifier.verify(contactUid, sessionState)
     }
 

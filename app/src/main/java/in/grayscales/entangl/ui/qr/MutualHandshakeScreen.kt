@@ -101,14 +101,13 @@ fun MutualHandshakeScreen(
 
     var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
 
-    // Bind local UID for self-scan rejection (military-grade: cannot entangle with self)
+    // Bind local UID for self-scan rejection (a device cannot entangle with itself).
     androidx.compose.runtime.LaunchedEffect(chatViewModel.localUid) {
         chatViewModel.handshakeManager.localUidHint = chatViewModel.localUid
     }
 
-    // Real-time peer detection on transmitter side (resolves silent receiver / stranded beacon issue).
-    // Skips already-accepted peers: completed handshakes are announced once by the
-    // global success dialog (MainActivity), never re-prompted here.
+    // Real-time peer detection: surfaces newly arriving handshake rows so the
+    // scanner side can complete the reciprocal scan without leaving the screen.
     val contacts by chatViewModel.contacts.collectAsState()
     val initialUids = remember { contacts.map { it.uid }.toSet() }
     var dismissedPeerUids by remember { mutableStateOf(setOf<String>()) }
@@ -578,7 +577,8 @@ private fun MutualPendingCard(
                         text = "VERIFY SAFETY MATCH & UNLOCK CHAT",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
+                        color = CyberDark
                     )
                 }
                 if (failed) {

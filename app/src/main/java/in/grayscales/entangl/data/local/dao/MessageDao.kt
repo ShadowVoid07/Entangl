@@ -4,17 +4,33 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import `in`.grayscales.entangl.data.local.entity.MessageEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MessageDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(message: MessageEntity)
+    // IGNORE + UPDATE (never REPLACE): same DELETE+INSERT hazard class as contacts.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(message: MessageEntity): Long
+
+    @Update
+    suspend fun update(message: MessageEntity)
+
+    @Transaction
+    suspend fun insertOrUpdate(message: MessageEntity) {
+        if (insert(message) == -1L) {
+            update(message)
+        }
+    }
 
     @Query("SELECT * FROM messages WHERE contactUid = :contactUid ORDER BY timestamp ASC")
     fun observeForContact(contactUid: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages WHERE contactUid = :contactUid ORDER BY timestamp DESC LIMIT 1")
+    fun observeLatestForContact(contactUid: String): Flow<MessageEntity?>
 
     @Query("SELECT * FROM messages ORDER BY timestamp ASC")
     suspend fun getAllMessages(): List<MessageEntity>

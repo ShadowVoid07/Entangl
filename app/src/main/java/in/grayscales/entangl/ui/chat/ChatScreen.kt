@@ -120,6 +120,8 @@ fun ChatScreen(
 
     // Open at newest unseen: first incoming not yet READ, else bottom. Marks read
     // after landing so the next open starts at the bottom when fully caught up.
+    // Entrance choreography cutoff: only arrivals newer than chat-open animate.
+    val openThreshold = remember(contact.uid) { System.currentTimeMillis() }
     var jumpDone by remember(contact.uid) { mutableStateOf(false) }
     var lastSeenSize by remember(contact.uid) { mutableIntStateOf(0) }
     LaunchedEffect(chatRows, contact.uid) {
@@ -136,12 +138,14 @@ fun ChatScreen(
         }
     }
 
-    // Smooth follow: only auto-scroll when new rows arrive after the jump.
+    // Smooth follow: auto-scrolls only for new rows after the jump, using instant
+    // jumps (safe under IME resizes). Indices always refer to chatRows, since day
+    // dividers shift positions relative to bare messages.
     LaunchedEffect(messages.size) {
         if (jumpDone && messages.size > lastSeenSize) {
             lastSeenSize = messages.size
             if (chatRows.isNotEmpty()) {
-                listState.animateScrollToItem(chatRows.size - 1)
+                listState.scrollToItem(chatRows.size - 1)
             }
         } else if (!jumpDone) {
             lastSeenSize = messages.size
@@ -150,8 +154,8 @@ fun ChatScreen(
 
     val isImeVisible = WindowInsets.isImeVisible
     LaunchedEffect(isImeVisible) {
-        if (isImeVisible && messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+        if (isImeVisible && chatRows.isNotEmpty()) {
+            listState.scrollToItem(chatRows.size - 1)
         }
     }
 
@@ -205,8 +209,8 @@ fun ChatScreen(
 
     val isUnaccepted = !contact.isAccepted
     val isPendingReciprocal = contact.safetyNumber.startsWith("Pending")
-    // Banner only while undecrypted PENDING exists. Healed messages flip to DELIVERED
-    // via unlock, so the banner clears itself instead of demanding SCAN forever.
+    // Banner only while undecrypted PENDING exists; healed rows flip to DELIVERED
+    // via unlock, which clears the banner automatically.
     val hasEncryptedMessages = remember(messages) {
         messages.any { it.plaintext == "Encrypted message" && it.status == MessageStatus.PENDING }
     }
@@ -616,12 +620,21 @@ fun ChatScreen(
                     )
                 }
             } else {
-                items(chatRows, key = { row ->
-                    when (row) {
-                        is ChatRow.Day -> "day-${row.anchorId}"
-                        is ChatRow.Msg -> row.message.id
+                items(
+                    chatRows,
+                    key = { row ->
+                        when (row) {
+                            is ChatRow.Day -> "day-${row.anchorId}"
+                            is ChatRow.Msg -> row.message.id
+                        }
+                    },
+                    contentType = { row ->
+                        when (row) {
+                            is ChatRow.Day -> "day"
+                            is ChatRow.Msg -> if (row.message.direction == Direction.OUTGOING) "out" else "in"
+                        }
                     }
-                }) { row ->
+                ) { row ->
                     when (row) {
                         is ChatRow.Day -> DayDivider(label = row.label)
                         is ChatRow.Msg -> {
@@ -633,7 +646,8 @@ fun ChatScreen(
                                     zeroizingMessageIds.remove(message.id)
                                     onDeleteMessage(message.id)
                                 },
-                                onScanPeerQr = onScanPeerQr
+                                onScanPeerQr = onScanPeerQr,
+                                animateEntrance = message.timestamp >= openThreshold - 1_000L
                             )
                         }
                     }
@@ -805,8 +819,10 @@ fun ChatScreen(
                         ),
                         keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                             onSend = {
-                                if (inputText.isNotBlank()) {
-                                    onSendMessage(inputText)
+                                // Strip stray trailing newlines/spaces from the Send IME action.
+                                val trimmed = inputText.trim()
+                                if (trimmed.isNotBlank()) {
+                                    onSendMessage(trimmed)
                                     inputText = ""
                                 }
                             }
@@ -818,7 +834,7 @@ fun ChatScreen(
                     IconButton(
                         onClick = {
                             if (isSendActive) {
-                                onSendMessage(inputText)
+                                onSendMessage(inputText.trim())
                                 inputText = ""
                             }
                         },

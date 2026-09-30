@@ -24,6 +24,15 @@ data class Contact(
     // Never transmitted; enforced in MessageRepositoryImpl.
     val isBlocked: Boolean = false
 ) {
+    companion object {
+        /**
+         * Presence window: a peer counts as active now only with signature-verified
+         * traffic inside this window. `lastSeenAt` advances solely on fresh,
+         * verified inbound envelopes — never on our own sends, never on stale
+         * backlog replays — so the dot reflects real current activity.
+         */
+        const val PRESENCE_ACTIVE_WINDOW_MS = 120_000L
+    }
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Contact) return false

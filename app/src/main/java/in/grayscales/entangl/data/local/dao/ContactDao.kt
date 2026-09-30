@@ -4,14 +4,29 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import `in`.grayscales.entangl.data.local.entity.ContactEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ContactDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(contact: ContactEntity)
+    // NEVER use REPLACE here: SQLite implements REPLACE as DELETE + INSERT, which
+    // fires the messages FK CASCADE and silently wipes the peer's entire history
+    // on every contact save (scan, ping, unlock). IGNORE + UPDATE preserves children.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(contact: ContactEntity): Long
+
+    @Update
+    suspend fun update(contact: ContactEntity)
+
+    @Transaction
+    suspend fun insertOrUpdate(contact: ContactEntity) {
+        if (insert(contact) == -1L) {
+            update(contact)
+        }
+    }
 
     @Query("SELECT * FROM contacts WHERE uid = :uid")
     suspend fun getByUid(uid: String): ContactEntity?

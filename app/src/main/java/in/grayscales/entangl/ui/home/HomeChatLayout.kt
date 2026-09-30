@@ -1,6 +1,7 @@
 package `in`.grayscales.entangl.ui.home
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -32,6 +33,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,8 +112,7 @@ fun ListDetailPaneScaffold(
             }
         } else {
             // Compact Phone Single-Pane: Pushes List to Detail with Back navigation.
-            // Back is owned by MainActivity (single owner) to avoid double-pop with
-            // the detail-visible handler that previously lived here.
+            // Back is owned solely by MainActivity (single owner, no double-pop).
             AnimatedContent(
                 targetState = isDetailVisible,
                 transitionSpec = {
@@ -118,9 +122,10 @@ fun ListDetailPaneScaffold(
                             slideOutHorizontally { width -> -width / 3 } + fadeOut()
                         )
                     } else {
-                        // Pop back to List: list slides in from left, detail retreats right
-                        (slideInHorizontally { width -> -width / 3 } + fadeIn()).togetherWith(
-                            slideOutHorizontally { width -> width } + fadeOut()
+                        // Pop back to List: detail fades out in place while the list
+                        // drifts in subtly from the left (no full-width content sweep).
+                        (slideInHorizontally { width -> -width / 8 } + fadeIn(tween(200))).togetherWith(
+                            fadeOut(tween(150))
                         )
                     }
                 },
@@ -164,15 +169,29 @@ fun HomeChatLayout(
     localUsername: String = "",
     localProfileColor: String = "",
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
-    isPrivacyBlurEnabled: Boolean = true,
     onClearChat: (Contact) -> Unit = {},
     onBlockToggle: (Contact) -> Unit = {},
+    lastMessages: Map<String, Message?> = emptyMap(),
     onUnblockContact: () -> Unit = {},
     onMarkRead: () -> Unit = {},
     onDeleteMessage: (String) -> Unit = {}
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isDualPane = maxWidth >= 600.dp
+
+        // Exit-animation snapshot: AnimatedContent keeps the outgoing detail frame
+        // composed while it fades, but that frame re-reads live state — after a
+        // deselect it would see activeContact=null and flash StandbyPane (or an
+        // emptied chat) mid-transition. Pin the last live selection + messages so
+        // the outgoing frame fades out intact.
+        var exitingContact by remember { mutableStateOf<Contact?>(null) }
+        var exitingMessages by remember { mutableStateOf<List<Message>>(emptyList()) }
+        if (activeContact != null) {
+            exitingContact = activeContact
+            exitingMessages = messages
+        }
+        val shownContact = activeContact ?: exitingContact
+        val shownMessages = if (activeContact != null) messages else exitingMessages
 
         ListDetailPaneScaffold(
             isDetailVisible = activeContact != null,
@@ -195,16 +214,16 @@ fun HomeChatLayout(
                     localUsername = localUsername,
                     localProfileColor = localProfileColor,
                     onUpdateProfile = onUpdateProfile,
-                    isPrivacyBlurEnabled = isPrivacyBlurEnabled,
                     onClearChat = onClearChat,
-                    onBlockToggle = onBlockToggle
+                    onBlockToggle = onBlockToggle,
+                    lastMessages = lastMessages
                 )
             },
             detailPane = {
-                if (activeContact != null) {
+                if (shownContact != null) {
                     ChatScreen(
-                        contact = activeContact,
-                        messages = messages,
+                        contact = shownContact,
+                        messages = shownMessages,
                         selfDestructDuration = selfDestructDuration,
                         onSendMessage = onSendMessage,
                         onSetSelfDestruct = onSetSelfDestruct,
@@ -212,21 +231,30 @@ fun HomeChatLayout(
                         showBackButton = !isDualPane,
                         onShowMyQr = onShowMyQr,
                         onScanPeerQr = onScanQr,
-                        onAcceptContact = { onAcceptContact(activeContact) },
+                        onAcceptContact = { onAcceptContact(shownContact) },
                         onUnblockContact = onUnblockContact,
                         onMarkRead = onMarkRead,
                         onDeleteMessage = onDeleteMessage,
                         onDeclineContact = {
-                            onDeleteContact(activeContact)
+                            onDeleteContact(shownContact)
                             onSelectContact(null)
                         }
                     )
-                } else {
-                    // Mission Control Standby Pane for Tablet / Foldable right pane
+                } else if (isDualPane) {
+                    // Mission Control Standby Pane for Tablet / Foldable right pane.
+                    // Phones render an inert surface instead so no placeholder can flash.
                     StandbyPane(
                         onHandshake = onHandshake,
                         onScanQr = onScanQr,
                         onShowMyQr = onShowMyQr
+                    )
+                } else {
+                    // Phone with no selection: unreachable while the list shows;
+                    // render an inert surface so no placeholder can ever flash.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(VoidBackground)
                     )
                 }
             }
@@ -288,11 +316,16 @@ private fun StandbyPane(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            // Full-width stacked actions: side-by-side buttons overflowed on narrow
+            // panes and wrapped labels letter-by-letter. Column fits every width.
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(
                     onClick = onScanQr,
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = QuantumCyan,
                         contentColor = CyberDark
@@ -302,19 +335,22 @@ private fun StandbyPane(
                     Icon(
                         imageVector = Icons.Default.QrCodeScanner,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
+                        tint = CyberDark
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "SCAN PEER QR",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        color = CyberDark
                     )
                 }
 
                 OutlinedButton(
                     onClick = onShowMyQr,
+                    modifier = Modifier.fillMaxWidth(),
                     border = androidx.compose.foundation.BorderStroke(1.dp, QuantumCyan),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = QuantumCyan
@@ -324,14 +360,16 @@ private fun StandbyPane(
                     Icon(
                         imageVector = Icons.Default.QrCode,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
+                        tint = QuantumCyan
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "SHOW MY BEACON",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        color = QuantumCyan
                     )
                 }
             }

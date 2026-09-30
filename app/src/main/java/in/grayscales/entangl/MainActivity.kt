@@ -194,8 +194,7 @@ class MainActivity : ComponentActivity() {
                         screenStack.clear()
                         screenStack.add(AppScreen.MESSAGES)
                     } else if (screen == AppScreen.HANDSHAKE) {
-                        // Single handshake instance: update tab in place instead of
-                        // stacking HANDSHAKE→SETTINGS→HANDSHAKE duplicates.
+                        // Single handshake instance: update tab in place, no duplicates.
                         screenStack.remove(AppScreen.HANDSHAKE)
                         screenStack.add(screen)
                     } else {
@@ -206,10 +205,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val contacts by chatViewModel.contacts.collectAsState()
+                val lastMessages by chatViewModel.lastMessages.collectAsState()
                 val activeContact by chatViewModel.activeContact.collectAsState()
                 val activeMessages by chatViewModel.activeMessages.collectAsState()
                 val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
-                var isPrivacyBlurEnabled by remember { mutableStateOf(true) }
 
                 fun navigateBack() {
                     if (screenStack.size > 1) {
@@ -458,7 +457,8 @@ class MainActivity : ComponentActivity() {
                                                 text = "Chat now",
                                                 fontFamily = QuantumMonospace,
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp
+                                                fontSize = 11.sp,
+                                                color = CyberDark
                                             )
                                         }
                                         OutlinedButton(
@@ -560,7 +560,8 @@ class MainActivity : ComponentActivity() {
                                                 text = "Scan peer code",
                                                 fontFamily = QuantumMonospace,
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp
+                                                fontSize = 11.sp,
+                                                color = CyberDark
                                             )
                                         }
 
@@ -653,7 +654,7 @@ class MainActivity : ComponentActivity() {
                                     localUsername = currentUsername,
                                     localProfileColor = currentProfileColor,
                                     onUpdateProfile = null,
-                                    isPrivacyBlurEnabled = isPrivacyBlurEnabled
+                                    lastMessages = lastMessages
                                 )
                             }
 
@@ -664,10 +665,8 @@ class MainActivity : ComponentActivity() {
                                     localProfileColor = currentProfileColor,
                                     initialTab = handshakeInitialTab,
                                     onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
-                                        // MILITARY-GRADE: record outbound scan ONLY, stay on handshake profile
-                                        // for reciprocal scan (B must scan A while on this profile).
-                                        // Do NOT navigate to MESSAGES — chat stays locked until
-                                        // hasScannedPeer && hasBeenScanned && safety confirmed.
+                                        // Records the outbound scan only and stays on the handshake
+                                        // profile: chat unlocks after both directions verify.
                                         chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
                                     },
                                     onMutualUnlocked = {
@@ -689,9 +688,7 @@ class MainActivity : ComponentActivity() {
                                     localUsername = currentUsername,
                                     localProfileColor = currentProfileColor,
                                     onBack = { navigateBack() },
-                                    onDeviceTransfer = { navigateTo(AppScreen.DEVICE_TRANSFER) },
-                                    isPrivacyBlurEnabled = isPrivacyBlurEnabled,
-                                    onTogglePrivacyBlur = { isPrivacyBlurEnabled = it }
+                                    onDeviceTransfer = { navigateTo(AppScreen.DEVICE_TRANSFER) }
                                 )
                             }
 

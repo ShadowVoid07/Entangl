@@ -28,6 +28,9 @@ interface MessageRepository {
     /** Observe messages for a specific contact as a reactive stream. */
     fun observeForContact(contactUid: String): Flow<List<Message>>
 
+    /** Observe only the latest message for roster previews (single decrypt). */
+    fun observeLastMessage(contactUid: String): Flow<Message?>
+
     /** Delete messages that have passed their self-destruct time. */
     suspend fun deleteExpired()
 

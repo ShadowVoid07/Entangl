@@ -338,7 +338,7 @@ fun NetworkStatusSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isRenewing) "RENEWING ONION CIRCUIT..." else "RENEW TOR CIRCUIT",
+                    text = if (isRenewing) "RENEWING RELAY LINK..." else "RENEW RELAY CONNECTION",
                     fontFamily = QuantumMonospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,

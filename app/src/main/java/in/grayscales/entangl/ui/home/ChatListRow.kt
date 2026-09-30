@@ -1,12 +1,8 @@
 package `in`.grayscales.entangl.ui.home
 
-import android.os.Build
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,29 +18,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.domain.model.Contact
@@ -60,84 +41,13 @@ import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 
-/**
- * Modifier extension applying an 8.dp Gaussian blur when [isBlurActive] is true,
- * strictly guarded by an SDK version check (Android 12 / API 31+).
- *
- * For API < 31, no unsupported blur modifier is attached to prevent rendering crashes.
- */
-fun Modifier.privacyBlur(
-    isBlurActive: Boolean,
-    blurRadius: Dp = 8.dp
-): Modifier {
-    return if (isBlurActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        this.blur(radius = blurRadius)
-    } else {
-        this
-    }
-}
-
-/**
- * Anti-Shoulder-Surfing Privacy Blur Text composable.
- *
- * - Applies an 8.dp Gaussian blur on API 31+ (Android S+).
- * - Fallback for API < 31: Renders a solid black 90% opacity overlay box covering the preview text.
- * - Reveals crisp plaintext when [isRevealed] is true (e.g. during physical press-and-hold).
- */
-@Composable
-fun PrivacyBlurText(
-    text: String,
-    isRevealed: Boolean,
-    modifier: Modifier = Modifier,
-    isPrivacyEnabled: Boolean = true,
-    blurRadius: Dp = 8.dp,
-    color: Color = SubatomicGray,
-    fontSize: TextUnit = 12.sp,
-    fontFamily: FontFamily = QuantumMonospace,
-    maxLines: Int = 1,
-    overflow: TextOverflow = TextOverflow.Ellipsis
-) {
-    val isObfuscated = isPrivacyEnabled && !isRevealed
-
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.CenterStart
-    ) {
-        // Base preview text
-        Text(
-            text = text,
-            color = color,
-            fontSize = fontSize,
-            fontFamily = fontFamily,
-            maxLines = maxLines,
-            overflow = overflow,
-            modifier = Modifier.privacyBlur(
-                isBlurActive = isObfuscated,
-                blurRadius = blurRadius
-            )
-        )
-
-        // API < 31 Fallback: Solid black 90% opacity overlay box
-        if (isObfuscated && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Color.Black.copy(alpha = 0.90f))
-                    .border(0.5.dp, ParticleBorder, RoundedCornerShape(3.dp))
-            )
-        }
-    }
-}
 
 /**
  * ChatListRow provides a sleek, cybernetic contact row featuring:
  * 1. Monospaced contact details & avatar with peer profile tint.
- * 2. Status verification badge & safety state.
- * 3. 8.dp Gaussian privacy blur on message preview text (API >= 31).
- * 4. API < 31 fallback: solid black 90% opacity overlay box.
- * 5. Physical press-and-hold gesture via [pointerInput] to temporarily reveal the preview text.
- * 6. Quick tap to open conversation.
+ * 2. Status verification badge.
+ * 3. Plain message preview text.
+ * 4. Tap to open conversation, overflow menu for manage actions.
  */
 @Composable
 fun ChatListRow(
@@ -146,12 +56,11 @@ fun ChatListRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     lastMessage: Message? = null,
-    isPrivacyBlurEnabled: Boolean = true,
-    onOptionsClick: (() -> Unit)? = null
+    onOptionsClick: (() -> Unit)? = null,
+    // Clock snapshot for presence (parent ticks ~30s). Green means verified peer
+    // traffic inside PRESENCE_ACTIVE_WINDOW_MS — never handshake state alone.
+    nowMillis: Long = System.currentTimeMillis()
 ) {
-    var isHolding by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
-
     val isPending = !contact.isAccepted
     val isBlocked = contact.isBlocked
     val borderColor = when {
@@ -163,11 +72,11 @@ fun ChatListRow(
     val peerColor = contact.profileColor?.let { ColorUtils.parseColorOrNull(it) } ?: QuantumCyan
     val avatarTint = if (isPending || isBlocked) IsotopeMagenta else peerColor
 
-    val previewText = when {
+    val previewText: String? = when {
         isBlocked -> "Blocked — messaging paused"
         isPending -> "Pending mutual handshake connection"
         lastMessage != null -> lastMessage.plaintext
-        else -> "Secure ratchet channel established"
+        else -> null
     }
 
     Box(
@@ -176,6 +85,7 @@ fun ChatListRow(
             .clip(RoundedCornerShape(12.dp))
             .background(surfaceColor)
             .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
             .padding(14.dp)
     ) {
         Row(
@@ -184,24 +94,7 @@ fun ChatListRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .pointerInput(contact.uid) {
-                        detectTapGestures(
-                            onPress = {
-                                isHolding = true
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val released = tryAwaitRelease()
-                                isHolding = false
-                                if (released) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                }
-                            },
-                            onTap = {
-                                onClick()
-                            }
-                        )
-                    },
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -234,8 +127,16 @@ fun ChatListRow(
                         }
                     }
 
-                    // Verification status pip
-                    val pipColor = if (isPending) IsotopeMagenta else QuantumGreen
+                    // Liveness pip: pending handshake = magenta; accepted peers show
+                    // green ONLY with fresh verified traffic, gray otherwise.
+                    val lastSeen = contact.lastSeenAt ?: 0L
+                    val isLive = !isPending && (nowMillis - lastSeen) <= Contact.PRESENCE_ACTIVE_WINDOW_MS &&
+                        lastSeen > 0L
+                    val pipColor = when {
+                        isPending -> IsotopeMagenta
+                        isLive -> QuantumGreen
+                        else -> SubatomicGray
+                    }
                     Box(
                         modifier = Modifier
                             .size(10.dp)
@@ -245,78 +146,33 @@ fun ChatListRow(
                     )
                 }
 
-                // Name, Verification, and Message Preview
+                // Contact name + preview
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val displayName = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
+                    val displayName = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
+                    Text(
+                        text = displayName,
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = NeutronWhite,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    // Message preview (hidden when the chat is truly empty)
+                    if (previewText != null) {
                         Text(
-                            text = displayName,
-                            fontFamily = QuantumMonospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = NeutronWhite,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        if (!isPending) {
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = "Verified Handshake",
-                                tint = QuantumCyan,
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
-                    }
-
-                    // Message Preview with Anti-Shoulder-Surfing Privacy Blur
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        PrivacyBlurText(
                             text = previewText,
-                            isRevealed = isHolding,
-                            isPrivacyEnabled = isPrivacyBlurEnabled,
-                            blurRadius = 8.dp,
-                            color = if (isPending) IsotopeMagenta else SubatomicGray,
+                            color = if (isPending || isBlocked) IsotopeMagenta else SubatomicGray,
                             fontSize = 12.sp,
-                            modifier = Modifier.weight(1f, fill = false)
+                            fontFamily = QuantumMonospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth()
                         )
-
-                        // Privacy shield icon showing active shoulder-surfing guard
-                        if (isPrivacyBlurEnabled && !isPending) {
-                            AnimatedVisibility(
-                                visible = !isHolding,
-                                enter = fadeIn(),
-                                exit = fadeOut()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.VisibilityOff,
-                                    contentDescription = "Privacy Blur Active (Hold to reveal)",
-                                    tint = SubatomicGray.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                            AnimatedVisibility(
-                                visible = isHolding,
-                                enter = fadeIn(),
-                                exit = fadeOut()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Visibility,
-                                    contentDescription = "Revealed",
-                                    tint = QuantumCyan,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
                     }
                 }
             }

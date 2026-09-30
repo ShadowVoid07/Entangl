@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -91,6 +92,19 @@ class ChatViewModel(
     val contacts: StateFlow<List<Contact>> = contactRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Latest message per contact for roster previews (one decrypt each, not history).
+    val lastMessages: StateFlow<Map<String, Message?>> = contacts.flatMapLatest { list ->
+        if (list.isEmpty()) {
+            flowOf(emptyMap())
+        } else {
+            combine(
+                list.map { contact ->
+                    messageRepository.observeLastMessage(contact.uid).map { contact.uid to it }
+                }
+            ) { pairs -> pairs.toMap() }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     // Currently selected contact UID
     private val _selectedContactUid = MutableStateFlow<String?>(null)
 
@@ -139,11 +153,12 @@ class ChatViewModel(
             try {
                 val selfDestructAt = _selfDestructDuration.value?.let { System.currentTimeMillis() + it }
                 messageRepository.send(contact.uid, plaintext, selfDestructAt)
-                contactRepository.updateLastSeen(contact.uid, System.currentTimeMillis())
+                // Note: lastSeenAt is peer-activity-only (fresh verified inbound);
+                // our own sends must never mark the peer active.
             } catch (e: IllegalStateException) {
-                // Mutual gate: chat is locked until both scans + safety confirm.
+                // Mutual gate: chat is locked until both scans complete.
                 // Never crash from UI send; user stays on locked state with guidance.
-                Log.w("ChatViewModel", "Send blocked (mutual incomplete): ${e.message}")
+                Log.d("ChatViewModel", "Send blocked (mutual incomplete)")
             }
         }
     }
@@ -229,7 +244,7 @@ class ChatViewModel(
         viewModelScope.launch {
             // Self-scan guard
             if (peerUid == localUid) {
-                Log.w("ChatViewModel", "Self-scan rejected for $peerUid")
+                Log.d("ChatViewModel", "Self-scan rejected")
                 return@launch
             }
             val existingContact = contactRepository.getByUid(peerUid)
@@ -237,7 +252,7 @@ class ChatViewModel(
             if (existingContact != null && existingContact.publicKey.isNotEmpty() &&
                 !existingContact.publicKey.contentEquals(peerPublicKey)
             ) {
-                Log.e("ChatViewModel", "Key change without succession for $peerUid — rejected, require Device Succession")
+                Log.d("ChatViewModel", "Key change without succession — rejected, require Device Succession")
                 return@launch
             }
             val displayName = when {
@@ -384,14 +399,10 @@ class ChatViewModel(
     }
 
     /**
-     * Legacy entry point kept for API compatibility with contact/chat screens.
-     * MILITARY RULE: UI buttons must NEVER mutate scan state. hasBeenScanned is set
-     * ONLY by MessageRepositoryImpl upon signature-verified SCAN_PING receipt.
-     * Previously this method set hasBeenScanned=true on any tap, which faked inbound
-     * proof for outbound-only contacts and showed THEY SCANNED ✓ without a real scan.
-     * It also sent SCAN_ACCEPT receipts and raised prompts that triple-fired with the
-     * handshake dialog + ledger. Now it is a pure no-op (navigation is handled by
-     * callers via onScanQr); the handshake ledger is the single source of truth.
+     * Scan-continue entry point for contact/chat screens. Navigation-only by design:
+     * scan state mutates exclusively on verified optical scans (outbound) and
+     * signature-verified SCAN_PING receipts (inbound); the handshake ledger is the
+     * single source of truth. Callers navigate via onScanQr.
      */
     fun acceptContact(contact: Contact) {
         Log.d("ChatViewModel", "Scan-continue tapped; state unchanged, awaiting optical proof")
@@ -404,7 +415,12 @@ class ChatViewModel(
                 _selectedContactUid.value = null
             }
             contactRepository.delete(contact.uid)
+            // Sessions are dual-aliased (uid + onion address): destroy both so no
+            // ghost key, ratchet state, HMAC, or persisted entry survives deletion.
             cryptoManager.destroySession(contact.uid)
+            if (contact.onionAddress.isNotBlank()) {
+                cryptoManager.destroySession(contact.onionAddress)
+            }
         }
     }
 

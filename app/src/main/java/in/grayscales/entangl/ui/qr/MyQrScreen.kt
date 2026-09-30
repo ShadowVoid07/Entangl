@@ -67,7 +67,9 @@ import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.seconds
 
 @Composable
@@ -93,13 +95,16 @@ fun MyQrScreen(
 
     fun regenerate() {
         payload = handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername, localProfileColor)
-        qrBitmap = QrCodeGenerator.generate(payload.toQrString(), sizePx = 640)
+        // Bitmap follows asynchronously via LaunchedEffect(payload) below.
         secondsRemaining = 60
     }
 
-    // Generate initial QR bitmap
+    // Generate QR bitmap off the Main thread: 640px ZXing encode janked rotation.
     LaunchedEffect(payload) {
-        qrBitmap = QrCodeGenerator.generate(payload.toQrString(), sizePx = 640)
+        val bitmap = withContext(Dispatchers.Default) {
+            QrCodeGenerator.generate(payload.toQrString(), sizePx = 640)
+        }
+        qrBitmap = bitmap
     }
 
     // 60-second rolling countdown timer

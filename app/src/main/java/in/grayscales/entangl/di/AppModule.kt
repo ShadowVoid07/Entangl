@@ -29,8 +29,9 @@ val appModule = module {
     single { EntanglDatabase.getInstance(get()) }
     single { get<EntanglDatabase>().contactDao() }
     single { get<EntanglDatabase>().messageDao() }
+    single { get<EntanglDatabase>().processedEnvelopeDao() }
     single<ContactRepository> { ContactRepositoryImpl(get()) }
-    single<MessageRepository> { MessageRepositoryImpl(get(), get(), get(), get(), get(), get(), get()) }
+    single<MessageRepository> { MessageRepositoryImpl(get(), get(), get(), get(), get(), get(), get(), get()) }
     single { NetworkMonitor(get(), get(), get(), get<MessageRepository>() as MessageRepositoryImpl) }
     single { EntanglNotificationManager(get()) }
     single { KeyDestructionService(androidContext(), get()) }
