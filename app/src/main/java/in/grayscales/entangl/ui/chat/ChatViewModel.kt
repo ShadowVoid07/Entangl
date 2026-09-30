@@ -160,6 +160,22 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * Internal post-scan health check used before announcing handshake success.
+     * Confirms persisted mutual flags, pinned key presence, and ratchet HMAC
+     * integrity — all set only through signature-verified scan/ping paths.
+     */
+    suspend fun verifyHandshakeComplete(contactUid: String): Boolean {
+        val contact = contactRepository.getByUid(contactUid) ?: return false
+        if (!contact.isAccepted || !contact.hasScannedPeer || !contact.hasBeenScanned) return false
+        if (contact.publicKey.isEmpty()) return false
+        return try {
+            cryptoManager.verifyRatchetIntegrity(contactUid)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** Delete a single vaporized message (TTL countdown completion). */
     fun deleteMessage(messageId: String) {
         viewModelScope.launch {

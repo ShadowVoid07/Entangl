@@ -5,13 +5,14 @@
 <h1 align="center">Entangl</h1>
 
 <p align="center">
-  <strong>Zero-Knowledge, Post-Quantum Secure Peer-to-Peer Android Messenger</strong>
+  <strong>Zero-Knowledge End-to-End Encrypted Peer-to-Peer Android Messenger</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Android-API%2035-brightgreen.svg" alt="Android SDK 35" />
   <img src="https://img.shields.io/badge/Kotlin-2.0-blue.svg" alt="Kotlin 2.0" />
-  <img src="https://img.shields.io/badge/Security-PQXDH%20%2B%20DoubleRatchet-purple.svg" alt="Quantum Encryption" />
+  <img src="https://img.shields.io/badge/Security-AES--256--GCM%20%2B%20HKDF-purple.svg" alt="Message Encryption" />
+  <img src="https://img.shields.io/badge/Version-1.0.0-blue.svg" alt="Version 1.0.0" />
   <img src="https://img.shields.io/badge/License-AGPLv3-red.svg" alt="License" />
 </p>
 
@@ -24,11 +25,11 @@ Neither user can send a message until both parties have physically scanned each 
 ## Core Features
 
 * **Zero Trust Discovery:** Eradicate spam, unsolicited requests, and bulk scraping by enforcing in-person or out-of-band mutual scanning.
-* **True Peer-to-Peer (P2P) Architecture:** Communicate directly device-to-device via local Wi-Fi discovery and Tor Onion Services (`arti`). Messages are never stored on any backend or third-party infrastructure.
-* **Post-Quantum End-to-End Encryption:** Utilizes a hybrid **PQXDH (X25519 + ML-KEM-768 Kyber)** ratchet via `libsignal-client` to defend against Store Now, Decrypt Later (SNDL) attacks.
-* **Two-Layer Encryption Model:** Messages are encrypted via the Double Ratchet Protocol (Forward Secrecy, Post-Compromise Security), and the encrypted payloads are then transported over Tor (anonymity and transport encryption).
-* **Cryptographic Identity & Visual Customization:** Choose your secret codename and custom `#RRGGBB` profile color with live HSV color picker, cryptographically bound and signed via Ed25519 keys.
-* **Strict On-Device Security:** Keys are kept in native memory buffers (`NativeKeyBuffer`) and zeroed out explicitly. State integrity is backed by Android Keystore. Includes defenses against tapjacking, ADB backups, screenshots (`FLAG_SECURE`), and memory scraping.
+* **Signed Relay Messaging:** Messages travel as signed envelopes under blinded per-device inbox topics. Message plaintext is never stored on any backend or third-party infrastructure.
+* **Ratcheted End-to-End Encryption:** HKDF-SHA256 chain ratchet deriving a unique AES-256-GCM key per message with wire sequence binding; chains self-heal after peer restart or rescan.
+* **Two-Layer Protection:** Messages are encrypted with per-message keys, and every envelope (messages, delivery ACKs, scan proofs, TTL) is signed over canonical bytes including the ephemeral TTL.
+* **Cryptographic Identity & Visual Customization:** Choose your codename and custom `#RRGGBB` profile color with HSV sliders or direct hex entry, cryptographically bound and signed via P-256/ECDSA keys.
+* **Strict On-Device Security:** Keys are kept in off-heap native memory buffers (`NativeKeyBuffer`) and zeroized explicitly. State integrity is backed by Android Keystore. Includes defenses against tapjacking, ADB backups, screenshots (`FLAG_SECURE`), and memory scraping.
 
 ---
 
@@ -44,9 +45,9 @@ Entangl eliminates central servers, phone numbers, and cloud databases. Here is 
 >
 > **Stage 2 — Pairing:** You and your contact physically scan each other's QR codes. Both phones verify a matching 60-digit Safety Number before unlocking the chat.
 >
-> **Stage 3 — Messaging:** Messages route over local Wi-Fi (zero latency) or Tor hidden services (full IP anonymity), encrypted with a hybrid post-quantum ratchet (ML-KEM-768 Kyber + X25519).
+> **Stage 3 — Messaging:** Messages ride signed envelopes over redundant relays with verified delivery ACKs, encrypted with per-message ratchet keys (AES-256-GCM). Ephemeral TTL timers vaporize messages on both sides.
 >
-> **Stage 4 — Privacy:** Everything stored in SQLCipher encrypted database. Lockscreen notifications are hidden (`VISIBILITY_SECRET`). Keys are zeroed from memory after use.
+> **Stage 4 — Privacy:** Everything stored in SQLCipher encrypted database. Lockscreen notifications are hidden (`VISIBILITY_SECRET`, silent for the open chat). Keys are zeroed from memory after use.
 
 ### 2. The In-Person Pairing Experience
 
@@ -68,10 +69,8 @@ graph TD
     G --> H[You Scan Their QR]
     H --> I[Verify Safety Number]
     I --> J{Connection Route}
-    J -->|Local WiFi| K[Direct P2P Socket]
-    J -->|Internet| L[Tor Onion Circuit]
-    K --> M[Post-Quantum Encrypted Chat]
-    L --> M
+    J -->|Relay| K[Signed Relay Envelope]
+    K --> M[Ratchet-Encrypted Chat]
     M --> N[Encrypted Local Database]
     N --> O[Zero-Leak Notifications]
     O --> P[Auto-Destruct Messages]
@@ -100,11 +99,10 @@ sequenceDiagram
 | What Traditional Apps Do | How Entangl Protects You |
 | :--- | :--- |
 | **Phone number / email required** | **Zero accounts.** Your identity is a local cryptographic key pair generated inside your phone's hardware security module (StrongBox). |
-| **Centralized servers hold messages** | **Zero servers.** All messages travel directly peer-to-peer via local Wi-Fi sockets or encrypted Tor Onion hidden services. |
+| **Centralized servers hold messages** | **Zero servers.** Ciphertext travels as signed relay envelopes; no plaintext or keys ever touch infrastructure. |
 | **Contact list scraped into the cloud** | **Zero directory.** Contacts are only established when two physical devices scan each other. Nobody can discover your contacts. |
-| **Lockscreen notifications show text & senders** | **Zero-leak notifications.** Notifications use `VISIBILITY_SECRET`. The lockscreen stays blank, and alerts are generic without previews. |
-| **Vulnerable to future quantum computers** | **Post-quantum secure.** Over-the-air ratchet exchanges use **PQXDH (ML-KEM-768 Kyber + X25519)**, neutralizing Store Now, Decrypt Later attacks. |
-| **Screen capture & memory snooping** | **Hardened on-device.** Protected with `FLAG_SECURE`, anti-tapjacking view filters, and instant native memory zeroization (`NativeKeyBuffer`). |
+| **Lockscreen notifications show text & senders** | **Zero-leak notifications.** Notifications use `VISIBILITY_SECRET`. The lockscreen stays blank, alerts are generic, and the open chat stays silent. |
+| **Screen capture & memory snooping** | **Hardened on-device.** Protected with `FLAG_SECURE`, anti-tapjacking view filters, and explicit off-heap memory zeroization (`NativeKeyBuffer`). |
 
 ---
 
@@ -126,9 +124,10 @@ sequenceDiagram
 
 ## Architecture Highlights
 * **UI:** 100% Jetpack Compose (Material 3). Designed with adaptive layouts for foldables.
-* **Cryptography:** `libsignal-client` (Rust via JNI) and `sodium_memzero` for key lifecycle management.
-* **Local Storage:** `SQLCipher` for encrypted Room database.
-* **Networking:** `arti` (Tor implementation in Rust) for .onion endpoint generation and P2P routing.
+* **Cryptography:** P-256/ECDSA identity in Android Keystore, X25519 ephemerals, HKDF-SHA256 ratchet, AES-256-GCM.
+* **Local Storage:** `SQLCipher` for encrypted Room database (schema v4).
+* **Networking:** Signed relay envelopes with verified delivery ACKs; encrypted direct transfer for device migration.
+* **Verified:** 47 Android unit tests + 8 shared-module tests, zero Android Lint code findings.
 
 ## Contributing
 We welcome contributions from the community! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).

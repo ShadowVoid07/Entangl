@@ -106,11 +106,15 @@ fun MutualHandshakeScreen(
         chatViewModel.handshakeManager.localUidHint = chatViewModel.localUid
     }
 
-    // Real-time peer detection on transmitter side (resolves silent receiver / stranded beacon issue)
+    // Real-time peer detection on transmitter side (resolves silent receiver / stranded beacon issue).
+    // Skips already-accepted peers: completed handshakes are announced once by the
+    // global success dialog (MainActivity), never re-prompted here.
     val contacts by chatViewModel.contacts.collectAsState()
     val initialUids = remember { contacts.map { it.uid }.toSet() }
     var dismissedPeerUids by remember { mutableStateOf(setOf<String>()) }
-    val newlyDetectedPeer = contacts.firstOrNull { it.uid !in initialUids && it.uid !in dismissedPeerUids }
+    val newlyDetectedPeer = contacts.firstOrNull {
+        it.uid !in initialUids && it.uid !in dismissedPeerUids && !it.isAccepted
+    }
 
     if (newlyDetectedPeer != null) {
         // Direction-aware handshake dialog. The old code showed "PEER SCANNED YOUR

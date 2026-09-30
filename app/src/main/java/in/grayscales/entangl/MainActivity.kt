@@ -52,9 +52,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import `in`.grayscales.entangl.core.security.PlatformSecurity
 import `in`.grayscales.entangl.core.security.SecurityEvent
 import `in`.grayscales.entangl.data.network.EntanglRelayService
+import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.navigation.QuantumTwoPaneLayout
 import `in`.grayscales.entangl.ui.profile.EditProfileScreen
@@ -330,6 +332,148 @@ class MainActivity : ComponentActivity() {
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
                                         Text("PROCEED", fontFamily = QuantumMonospace, fontSize = 11.sp, color = NeutronWhite)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Handshake success celebration: exactly once per peer, only after an
+                // internal health re-check (persisted flags + pinned key + ratchet HMAC).
+                // Pre-existing accepted chats are seeded silently on first run so only
+                // fresh completions announce "HANDSHAKE SUCCESSFUL — chat now or later".
+                val celebratePrefs = remember {
+                    getSharedPreferences("entangl_handshake_celebrated", MODE_PRIVATE)
+                }
+                var celebratedUids by remember {
+                    mutableStateOf(
+                        celebratePrefs.getStringSet("uids", null)?.toSet() ?: emptySet()
+                    )
+                }
+                var celebrationSeeded by remember {
+                    mutableStateOf(celebratePrefs.contains("uids"))
+                }
+                var successContact by remember { mutableStateOf<Contact?>(null) }
+
+                LaunchedEffect(contacts) {
+                    if (!celebrationSeeded) {
+                        celebrationSeeded = true
+                        val baseline = contacts.filter { it.isAccepted }.map { it.uid }.toSet()
+                        celebratedUids = baseline
+                        celebratePrefs.edit { putStringSet("uids", baseline) }
+                        return@LaunchedEffect
+                    }
+                    val target = contacts.firstOrNull {
+                        it.isAccepted && it.uid !in celebratedUids && it.uid != successContact?.uid
+                    } ?: return@LaunchedEffect
+                    if (chatViewModel.verifyHandshakeComplete(target.uid)) {
+                        celebratedUids = celebratedUids + target.uid
+                        celebratePrefs.edit { putStringSet("uids", celebratedUids) }
+                        successContact = target
+                    }
+                }
+
+                if (isIdentityConfigured && currentScreen != AppScreen.INITIALIZE_IDENTITY) {
+                    val liveSuccess = successContact?.let { pending ->
+                        contacts.firstOrNull { it.uid == pending.uid } ?: pending
+                    }
+                    if (liveSuccess != null) {
+                        Dialog(onDismissRequest = { successContact = null }) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(1.dp, QuantumCyan, RoundedCornerShape(16.dp)),
+                                colors = CardDefaults.cardColors(containerColor = DarkMatter)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Text(
+                                        text = "HANDSHAKE SUCCESSFUL",
+                                        fontFamily = QuantumMonospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        letterSpacing = 2.sp,
+                                        color = QuantumCyan,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                    val peerName = liveSuccess.displayName?.ifBlank { null }
+                                        ?: "Peer ${liveSuccess.uid.take(6).uppercase()}"
+                                    Text(
+                                        text = "Secure channel with $peerName is verified and unlocked.",
+                                        fontFamily = QuantumMonospace,
+                                        fontSize = 11.sp,
+                                        lineHeight = 16.sp,
+                                        color = SubatomicGray,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(DarkMatterVariant)
+                                            .border(1.dp, ParticleBorder, RoundedCornerShape(8.dp))
+                                            .padding(12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = liveSuccess.safetyNumber,
+                                            fontFamily = QuantumMonospace,
+                                            fontSize = 11.sp,
+                                            lineHeight = 17.sp,
+                                            color = NeutronWhite,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                    Text(
+                                        text = "Safety match confirmed internally — compare anytime under the shield icon.",
+                                        fontFamily = QuantumMonospace,
+                                        fontSize = 9.sp,
+                                        color = SubatomicGray,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                successContact = null
+                                                screenStack.clear()
+                                                screenStack.add(AppScreen.MESSAGES)
+                                                chatViewModel.selectContact(liveSuccess)
+                                            },
+                                            modifier = Modifier.weight(1.2f),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = QuantumCyan,
+                                                contentColor = CyberDark
+                                            ),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Chat now",
+                                                fontFamily = QuantumMonospace,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        OutlinedButton(
+                                            onClick = { successContact = null },
+                                            modifier = Modifier.weight(0.8f),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = SubatomicGray),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, ParticleBorder),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Later",
+                                                fontFamily = QuantumMonospace,
+                                                fontSize = 11.sp
+                                            )
+                                        }
                                     }
                                 }
                             }
