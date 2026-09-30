@@ -33,4 +33,7 @@ interface MessageRepository {
 
     /** Decrypt and deliver all pending messages for a newly connected contact. */
     suspend fun unlockPendingMessages(contactUid: String)
+
+    /** Delete all stored messages for a contact (clear chat history). */
+    suspend fun clearChat(contactUid: String)
 }

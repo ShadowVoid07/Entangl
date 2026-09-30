@@ -122,14 +122,14 @@ flowchart TD
     EmptyView -- SHOW MY BEACON --> BeaconTab[HANDSHAKE: BEACON TAB\nDisplay Local QR Code]
     ContactList -- Top Bar Scanner Icon --> HandshakeChooser[HANDSHAKE\nDual Tab: Beacon / Sensor]
 
-    subgraph MutualExchange [Optical Handshake Flow]
-        BeaconTab -. Peer Scans Beacon .-> RealtimeNotice[REAL-TIME PEER DETECTED!\n'Bob scanned your code'\n[ACCEPT & SCAN] | [ACCEPT & CHAT]]
-        ScannerTab --> CameraDetected[QR Detected & Decoded]
-        CameraDetected --> PeerConfirmDialog[Peer Verification Dialog\nSafety Number Prefix & Codename]
-        PeerConfirmDialog --> AddContact[Add Contact & Send SCAN_PING]
-        AddContact --> ChatDirect[Open Chat With Peer]
-        RealtimeNotice -- ACCEPT & SCAN --> ScannerTab
-        RealtimeNotice -- ACCEPT & CHAT --> ChatDirect
+    subgraph MutualExchange [Optical Handshake Flow — strict mutual v4.3.0]
+        BeaconTab -. Peer Scans Beacon .-> RealtimeNotice[REAL-TIME PEER DETECTED\n'Bob scanned your code'\n[SCAN PEER BACK] — stays on profile]
+        ScannerTab --> CameraDetected[QR Detected & Decoded\nTTL + sig + CONFIRM binding + replay check]
+        CameraDetected --> PeerConfirmDialog[Peer Verification Dialog\nSafety Matrix + MUST-CHECK safety-match box]
+        PeerConfirmDialog --> AddContact[Record OUTBOUND scan & Send SCAN_PING\nisAccepted stays FALSE]
+        AddContact --> Ledger[Handshake ledger: YOU ○/✓ • THEY ○/✓]
+        RealtimeNotice -- SCAN PEER BACK --> ScannerTab
+        Ledger -- both ✓ + VERIFY SAFETY MATCH & UNLOCK --> ChatDirect[Open Chat With Peer]
     end
 
     %% Active Chat Flow
@@ -173,18 +173,16 @@ flowchart TD
   * Swipe or info menu: Triggers `DeleteContactDialog` with confirmation guardrail.
 
 ### Screen 3: Optical Mutual Handshake (`HANDSHAKE`)
-* **Purpose**: In-person zero-knowledge cryptographic key exchange.
+* **Purpose**: In-person zero-knowledge cryptographic key exchange. Strict mutual (v4.3.0): `A scans B → B scans A` while both stay on this profile. Chat unlocks only after both directions + safety confirm.
 * **Top Bar**: Back button, `MUTUAL HANDSHAKE` title with green shield, Settings gear icon.
 * **Tabs**:
-  * Tab 0: `TRANSMIT [BEACON]` (`MyQrScreen`) with high brightness and `FLAG_SECURE`.
-  * Tab 1: `RECEIVE [SENSOR]` (`QrScannerView`) with targeting reticle and torch toggle.
-* **Real-Time Peer Detection (The "Stranded Beacon" Fix)**:
-  * While Tab 0 is displayed, the screen observes `chatViewModel.contacts`.
-  * When a peer scans the code, an inline dialog or bottom card immediately presents:
-    > **PEER BEACON SCANNED**  
-    > `[Peer Codename]` scanned your beacon.  
-    > `[ ACCEPT & SCAN PEER ]` (switches to Tab 1 to scan peer's QR)  
-    > `[ ACCEPT & OPEN CHAT ]` (accepts peer and opens chat directly)
+  * Tab 0: `MY QR [BEACON]` (`MyQrScreen`) with high brightness and `FLAG_SECURE`. Rolling 60s `INITIATE` nonce; `CONFIRM` must echo displayed nonce.
+  * Tab 1: `SCAN QR [SENSOR]` (`QrScannerView`) with circular reticle + crosshairs, targeting brackets, torch toggle, camera unbind on lock.
+* **Scan verification**: TTL 60s (+10s skew), Ed25519 sig, structural checks, single-use nonce (replay rejected), self-scan guard via `localUidHint`. Safety matrix digits-only + mandatory safety-match checkbox; action is `RECORD SCAN & AWAIT RECIPROCAL` (never auto-accepts).
+* **Real-Time Peer Detection + ledger**:
+  * While beacon is displayed, observing `contacts`: on `SCAN_PING`, inline dialog `PEER SCANNED YOUR BEACON` with single action `[ SCAN PEER BACK ]` (switches to Tab 1). The `OPEN CHAT` bypass was removed.
+  * Pending ledger lists half-complete handshakes (`MUTUAL: <peer> — YOU ○/✓ • THEY ○/✓`). Final `[ VERIFY SAFETY MATCH & UNLOCK CHAT ]` calls `confirmMutualHandshake` (requires `hasScannedPeer && hasBeenScanned && safetyConfirmed`), then inits the Double Ratchet session and unlocks pending messages.
+* **Transport gating**: `SCAN_PING` records inbound only (`hasBeenScanned=true`, 30s rate-limit, key-pinning); `SCAN_ACCEPT` is a receipt granting nothing remotely; `send()` throws unless mutual-complete.
 
 ### Screen 4: Active Chat (`MESSAGES` Detail)
 * **Top Bar**: Peer avatar, codename, connection dot, self-destruct TTL toggle pill, safety number audit button, diagnostics uplink button.

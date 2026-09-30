@@ -191,6 +191,11 @@ class MainActivity : ComponentActivity() {
                     } else if (screen == AppScreen.MESSAGES) {
                         screenStack.clear()
                         screenStack.add(AppScreen.MESSAGES)
+                    } else if (screen == AppScreen.HANDSHAKE) {
+                        // Single handshake instance: update tab in place instead of
+                        // stacking HANDSHAKE→SETTINGS→HANDSHAKE duplicates.
+                        screenStack.remove(AppScreen.HANDSHAKE)
+                        screenStack.add(screen)
                     } else {
                         if (screenStack.lastOrNull() != screen) {
                             screenStack.add(screen)
@@ -216,14 +221,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Reactive handler for incoming notification deep-links
+                // Reactive handler for incoming notification deep-links.
+                // Validated: pending/deleted contacts route to HANDSHAKE (not a dead chat),
+                // and an in-progress scan is never yanked out from under the user.
                 LaunchedEffect(pendingNotificationContactUid.value) {
                     val uid = pendingNotificationContactUid.value
                     if (!uid.isNullOrBlank()) {
-                        screenStack.clear()
-                        screenStack.add(AppScreen.MESSAGES)
-                        chatViewModel.selectContactByUid(uid)
-                        pendingNotificationContactUid.value = null
+                        val target = contacts.firstOrNull { it.uid == uid }
+                        if (target == null) {
+                            pendingNotificationContactUid.value = null
+                        } else if (!target.isAccepted) {
+                            pendingNotificationContactUid.value = null
+                            chatViewModel.selectContact(null)
+                            navigateTo(AppScreen.HANDSHAKE, initialTab = 1)
+                        } else if (currentScreen == AppScreen.HANDSHAKE) {
+                            // Stay on profile during reciprocal scan; just select for later.
+                            chatViewModel.selectContactByUid(uid)
+                            pendingNotificationContactUid.value = null
+                        } else {
+                            screenStack.clear()
+                            screenStack.add(AppScreen.MESSAGES)
+                            chatViewModel.selectContactByUid(uid)
+                            pendingNotificationContactUid.value = null
+                        }
                     }
                 }
 
@@ -317,9 +337,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Reciprocal scan prompt dialog (only active when identity is configured)
-                if (isIdentityConfigured && currentScreen != AppScreen.INITIALIZE_IDENTITY) {
-                    promptReciprocalScanContact?.let { peer ->
+                // Reciprocal scan prompt: single source of truth lives in the handshake
+                // ledger, so suppress this dialog while already on HANDSHAKE (avoids
+                // triple-prompt with the peer dialog + ledger card). Show ONLY for genuine
+                // inbound (they scanned us, we have NOT scanned them) — outbound and mutual
+                // rows are covered by the handshake dialog + ledger and must not re-prompt.
+                if (isIdentityConfigured && currentScreen != AppScreen.INITIALIZE_IDENTITY &&
+                    currentScreen != AppScreen.HANDSHAKE
+                ) {
+                    promptReciprocalScanContact
+                        ?.takeIf { it.hasBeenScanned && !it.hasScannedPeer && !it.isAccepted }
+                        ?.let { peer ->
                         Dialog(onDismissRequest = { chatViewModel.dismissReciprocalScanPrompt() }) {
                             Card(
                                 modifier = Modifier
@@ -350,7 +378,7 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     Text(
-                                        text = "CONNECTION ACCEPTED",
+                                        text = "SCAN RECORDED",
                                         fontFamily = QuantumMonospace,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
@@ -360,7 +388,7 @@ class MainActivity : ComponentActivity() {
                                     )
 
                                     Text(
-                                        text = "${peer.displayName ?: "Peer"} can now send you messages. Scan their QR code to enable full 2-way encryption and unlock replies.",
+                                        text = "${peer.displayName ?: "Peer"} scanned your code. Chat unlocks only after you scan them back and safety numbers match.",
                                         fontFamily = QuantumMonospace,
                                         fontSize = 11.sp,
                                         lineHeight = 16.sp,
@@ -385,7 +413,7 @@ class MainActivity : ComponentActivity() {
                                             shape = RoundedCornerShape(8.dp)
                                         ) {
                                             Text(
-                                                text = "Scan QR Code",
+                                                text = "Scan peer code",
                                                 fontFamily = QuantumMonospace,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 11.sp
@@ -460,6 +488,15 @@ class MainActivity : ComponentActivity() {
                                     onSelectContact = { contact -> chatViewModel.selectContact(contact) },
                                     onDeleteContact = { contact -> chatViewModel.deleteContact(contact) },
                                     onAcceptContact = { contact -> chatViewModel.acceptContact(contact) },
+                                    onClearChat = { contact -> chatViewModel.clearChatHistory(contact) },
+                                    onBlockToggle = { contact ->
+                                        chatViewModel.setBlocked(contact, !contact.isBlocked)
+                                    },
+                                    onUnblockContact = {
+                                        activeContact?.let { contact ->
+                                            chatViewModel.setBlocked(contact, false)
+                                        }
+                                    },
                                     onSendMessage = { text -> chatViewModel.sendMessage(text) },
                                     onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
                                     onHandshake = { navigateTo(AppScreen.HANDSHAKE, initialTab = 0) },
@@ -486,6 +523,10 @@ class MainActivity : ComponentActivity() {
                                         // Do NOT navigate to MESSAGES — chat stays locked until
                                         // hasScannedPeer && hasBeenScanned && safety confirmed.
                                         chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
+                                    },
+                                    onMutualUnlocked = {
+                                        screenStack.clear()
+                                        screenStack.add(AppScreen.MESSAGES)
                                     },
                                     onTransferDetected = { payload ->
                                         chatViewModel.localTransferManager.startImportClient(payload)

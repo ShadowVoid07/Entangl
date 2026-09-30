@@ -134,8 +134,14 @@ class ChatViewModel(
         if (plaintext.isBlank()) return
 
         viewModelScope.launch {
-            messageRepository.send(contact.uid, plaintext)
-            contactRepository.updateLastSeen(contact.uid, System.currentTimeMillis())
+            try {
+                messageRepository.send(contact.uid, plaintext)
+                contactRepository.updateLastSeen(contact.uid, System.currentTimeMillis())
+            } catch (e: IllegalStateException) {
+                // Mutual gate: chat is locked until both scans + safety confirm.
+                // Never crash from UI send; user stays on locked state with guidance.
+                Log.w("ChatViewModel", "Send blocked (mutual incomplete): ${e.message}")
+            }
         }
     }
 
@@ -168,12 +174,11 @@ class ChatViewModel(
 
     /**
      * Establishes entanglement from a scanned and verified peer QR handshake.
-     * MILITARY-GRADE MUTUAL RULE:
-     * - This call proves OUTBOUND only (we scanned peer). It sets hasScannedPeer=true,
-     *   hasBeenScanned preserved from prior SCAN_PING, isAccepted stays FALSE.
-     * - isAccepted becomes true only via confirmMutualHandshake() after BOTH directions
-     *   are optically verified AND safety number explicitly confirmed out-of-band.
-     * - Crypto session is NOT initialized until mutual acceptance (no premature keys).
+     * This call proves OUTBOUND (we scanned peer): sets hasScannedPeer=true,
+     * preserves hasBeenScanned from prior SCAN_PING. If the peer already scanned
+     * us (mutual complete), the session initializes and chat unlocks immediately —
+     * no extra tap. Re-scans of an accepted peer refresh the session and keep chat open.
+     * Crypto session is initialized ONLY on mutual completion or re-scan of accepted.
      */
     fun addContactFromHandshake(
         peerUid: String,
@@ -208,6 +213,9 @@ class ChatViewModel(
                 else -> null
             }
             val hasBeenScanned = existingContact?.hasBeenScanned == true
+            // Remember completed handshakes: re-scanning an accepted peer (same key,
+            // verified above) must NOT lock a working chat back to pending.
+            val alreadyAccepted = existingContact?.isAccepted == true
             val contact = Contact(
                 uid = peerUid,
                 publicKey = peerPublicKey,
@@ -216,24 +224,49 @@ class ChatViewModel(
                 displayName = displayName,
                 createdAt = existingContact?.createdAt ?: System.currentTimeMillis(),
                 lastSeenAt = System.currentTimeMillis(),
-                // NEVER auto-accept on single scan. Both directions required.
-                isAccepted = false,
+                // This scan completes mutual iff the peer already scanned us.
+                // Otherwise stay pending until their SCAN_PING arrives.
+                isAccepted = alreadyAccepted,
                 profileColor = color,
                 hasScannedPeer = true,
                 hasBeenScanned = hasBeenScanned
             )
 
             contactRepository.save(contact)
-            // Do NOT init crypto session yet — wait for mutual confirmation.
-            // Do NOT select chat yet — stay on handshake profile for reciprocal scan.
-            _selectedContactUid.value = null
+            if (alreadyAccepted) {
+                // Refresh session so a re-scan never breaks a live channel.
+                try {
+                    cryptoManager.initializeSession(peerUid, peerPublicKey, peerOnion)
+                    messageRepository.unlockPendingMessages(peerUid)
+                } catch (e: Exception) {
+                    Log.w("ChatViewModel", "Session refresh on re-scan failed: ${e.message}")
+                }
+                _selectedContactUid.value = peerUid
+            } else if (hasBeenScanned) {
+                // Mutual just completed on our side (we scanned last): unlock immediately
+                // so the user is not stuck tapping SCAN again. Safety matrix stays
+                // available under the shield icon in chat for later visual audit.
+                try {
+                    cryptoManager.initializeSession(peerUid, peerPublicKey, peerOnion)
+                    messageRepository.unlockPendingMessages(peerUid)
+                    contactRepository.save(contact.copy(isAccepted = true))
+                    _selectedContactUid.value = peerUid
+                    Log.d("ChatViewModel", "Mutual complete — chat unlocked")
+                } catch (e: Exception) {
+                    Log.w("ChatViewModel", "Auto-unlock on mutual scan failed: ${e.message}")
+                    _selectedContactUid.value = null
+                }
+            } else {
+                // Do NOT select chat yet — stay on handshake profile for reciprocal scan.
+                _selectedContactUid.value = null
+            }
 
             // Send network scan ping to peer so they know their QR code was scanned
             // (this is the inbound proof for the peer side).
             val myUsername = nodeIdentityManager.username ?: ""
             val myColor = nodeIdentityManager.profileColor
             val myPub = cryptoManager.getLocalIdentityPublicKey() ?: handshakeManager.getOrGenerateIdentityKey()
-            Log.i("ChatViewModel", "Dispatching SCAN_PING to peer $peerUid (localUsername: '$myUsername', color: '$myColor')")
+            Log.d("ChatViewModel", "Dispatching SCAN_PING to peer $peerUid")
             var pingSent = false
             for (attempt in 1..3) {
                 pingSent = networkTransport.sendScanPing(
@@ -245,7 +278,7 @@ class ChatViewModel(
                     localProfileColor = myColor
                 )
                 if (pingSent) {
-                    Log.i("ChatViewModel", "SCAN_PING successfully transmitted to $peerUid on attempt $attempt")
+                    Log.d("ChatViewModel", "SCAN_PING transmitted to $peerUid on attempt $attempt")
                     break
                 }
                 Log.w("ChatViewModel", "SCAN_PING attempt $attempt to $peerUid failed, retrying in 500ms...")
@@ -263,101 +296,68 @@ class ChatViewModel(
      * 2. hasBeenScanned==true (peer SCAN_PING received, signature verified), AND
      * 3. user explicitly confirmed 60-digit safety numbers match out-of-band.
      * Only then isAccepted=true, session initialized, pending unlocked.
+     * Suspends so callers can navigate only on real success (no false-positive return).
      */
-    fun confirmMutualHandshake(contactUid: String, safetyConfirmed: Boolean): Boolean {
+    suspend fun confirmMutualHandshake(contactUid: String, safetyConfirmed: Boolean): Boolean {
         if (!safetyConfirmed) {
             Log.w("ChatViewModel", "Safety not confirmed for $contactUid — mutual blocked")
             return false
         }
-        viewModelScope.launch {
-            val contact = contactRepository.getByUid(contactUid) ?: return@launch
-            if (!contact.hasScannedPeer || !contact.hasBeenScanned) {
-                Log.w(
-                    "ChatViewModel",
-                    "Mutual incomplete for $contactUid " +
-                        "(scanned=${contact.hasScannedPeer}, beenScanned=${contact.hasBeenScanned})"
-                )
-                return@launch
-            }
-            if (contact.publicKey.isEmpty()) return@launch
-            try {
-                cryptoManager.initializeSession(contact.uid, contact.publicKey, contact.onionAddress)
-                messageRepository.unlockPendingMessages(contact.uid)
-            } catch (e: Exception) {
-                Log.w("ChatViewModel", "Crypto init on mutual confirm failed: ${e.message}")
-                return@launch
-            }
-            contactRepository.save(contact.copy(isAccepted = true, lastSeenAt = System.currentTimeMillis()))
-            _selectedContactUid.value = contact.uid
-            // Notify peer of acceptance (does NOT grant them acceptance — their side still requires mutual)
-            val myUsername = nodeIdentityManager.username ?: ""
-            val myColor = nodeIdentityManager.profileColor
-            val myPub = try {
-                cryptoManager.getLocalIdentityPublicKey() ?: handshakeManager.getOrGenerateIdentityKey()
-            } catch (_: Exception) {
-                ByteArray(0)
-            }
-            for (attempt in 1..3) {
-                val sent = networkTransport.sendScanAccept(
-                    recipientUid = contact.uid,
-                    localUid = localUid,
-                    localUsername = myUsername,
-                    localIdentityPub = myPub,
-                    localOnion = localOnion,
-                    localProfileColor = myColor
-                )
-                if (sent) break
-                delay(500L)
-            }
+        val contact = contactRepository.getByUid(contactUid) ?: return false
+        if (!contact.hasScannedPeer || !contact.hasBeenScanned) {
+            Log.w(
+                "ChatViewModel",
+                "Mutual incomplete for $contactUid " +
+                    "(scanned=${contact.hasScannedPeer}, beenScanned=${contact.hasBeenScanned})"
+            )
+            return false
+        }
+        if (contact.publicKey.isEmpty()) return false
+        try {
+            cryptoManager.initializeSession(contact.uid, contact.publicKey, contact.onionAddress)
+            messageRepository.unlockPendingMessages(contact.uid)
+        } catch (e: Exception) {
+            Log.w("ChatViewModel", "Crypto init on mutual confirm failed: ${e.message}")
+            return false
+        }
+        contactRepository.save(contact.copy(isAccepted = true, lastSeenAt = System.currentTimeMillis()))
+        _selectedContactUid.value = contact.uid
+        // Notify peer of acceptance (does NOT grant them acceptance — their side still requires mutual)
+        val myUsername = nodeIdentityManager.username ?: ""
+        val myColor = nodeIdentityManager.profileColor
+        val myPub = try {
+            cryptoManager.getLocalIdentityPublicKey() ?: handshakeManager.getOrGenerateIdentityKey()
+        } catch (_: Exception) {
+            ByteArray(0)
+        }
+        for (attempt in 1..3) {
+            val sent = networkTransport.sendScanAccept(
+                recipientUid = contact.uid,
+                localUid = localUid,
+                localUsername = myUsername,
+                localIdentityPub = myPub,
+                localOnion = localOnion,
+                localProfileColor = myColor
+            )
+            if (sent) break
+            delay(500L)
         }
         return true
     }
 
     /**
-     * Records inbound proof that peer scanned our QR (called via SCAN_PING path in
-     * repository — see MessageRepositoryImpl). This legacy accept path is now STRICT:
-     * it only records intent and prompts reciprocal scan. It NEVER sets isAccepted=true.
-     * Use confirmMutualHandshake() after both optical verifications + safety confirm.
+     * Legacy entry point kept for API compatibility with contact/chat screens.
+     * MILITARY RULE: UI buttons must NEVER mutate scan state. hasBeenScanned is set
+     * ONLY by MessageRepositoryImpl upon signature-verified SCAN_PING receipt.
+     * Previously this method set hasBeenScanned=true on any tap, which faked inbound
+     * proof for outbound-only contacts and showed THEY SCANNED ✓ without a real scan.
+     * It also sent SCAN_ACCEPT receipts and raised prompts that triple-fired with the
+     * handshake dialog + ledger. Now it is a pure no-op (navigation is handled by
+     * callers via onScanQr); the handshake ledger is the single source of truth.
      */
     fun acceptContact(contact: Contact) {
-        viewModelScope.launch {
-            // Refresh from DB to avoid stale flags
-            val fresh = contactRepository.getByUid(contact.uid) ?: contact
-            // Mark inbound receipt only; preserve outbound scan state. Stay unaccepted.
-            val updated = fresh.copy(
-                hasBeenScanned = true,
-                lastSeenAt = System.currentTimeMillis()
-            )
-            contactRepository.save(updated)
-
-            // Do NOT init crypto session here — wait for mutual.
-            // Do NOT send SCAN_ACCEPT as acceptance — send only as receipt (peer still must scan us back
-            // AND we must scan them). SCAN_ACCEPT no longer grants access remotely.
-            val myUsername = nodeIdentityManager.username ?: ""
-            val myColor = nodeIdentityManager.profileColor
-            val myPub = try {
-                cryptoManager.getLocalIdentityPublicKey() ?: handshakeManager.getOrGenerateIdentityKey()
-            } catch (_: Exception) {
-                ByteArray(0)
-            }
-
-            Log.i("ChatViewModel", "Recording inbound scan receipt for ${contact.uid}; awaiting reciprocal optical verification")
-            for (attempt in 1..3) {
-                val sent = networkTransport.sendScanAccept(
-                    recipientUid = contact.uid,
-                    localUid = localUid,
-                    localUsername = myUsername,
-                    localIdentityPub = myPub,
-                    localOnion = localOnion,
-                    localProfileColor = myColor
-                )
-                if (sent) break
-                delay(500L)
-            }
-
-            // Prompt to complete reciprocal scan while staying on handshake profile
-            _promptReciprocalScanForContact.value = updated
-        }
+        Log.d("ChatViewModel", "Scan-continue tapped; state unchanged, awaiting optical proof")
+        _promptReciprocalScanForContact.value = null
     }
 
     fun deleteContact(contact: Contact) {
@@ -367,6 +367,22 @@ class ChatViewModel(
             }
             contactRepository.delete(contact.uid)
             cryptoManager.destroySession(contact.uid)
+        }
+    }
+
+    /** Clear all stored message history for a contact (contact + keys kept). */
+    fun clearChatHistory(contact: Contact) {
+        viewModelScope.launch {
+            messageRepository.clearChat(contact.uid)
+        }
+    }
+
+    /** Block or unblock a peer. Blocked peers cannot send or receive until unblocked. */
+    fun setBlocked(contact: Contact, blocked: Boolean) {
+        viewModelScope.launch {
+            contactRepository.getByUid(contact.uid)?.let { fresh ->
+                contactRepository.save(fresh.copy(isBlocked = blocked))
+            }
         }
     }
 }

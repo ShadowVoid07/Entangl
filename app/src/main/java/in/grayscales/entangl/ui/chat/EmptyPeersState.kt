@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -219,12 +220,33 @@ fun EmptyPeersState(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "SCAN QR",
+                    text = "SCAN PEER CODE",
                     fontFamily = QuantumMonospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 1.sp,
                     color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            OutlinedButton(
+                onClick = onShowMyBeacon,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = QuantumCyan
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, QuantumCyan),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = "SHOW MY CODE",
+                    fontFamily = QuantumMonospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.sp,
+                    color = QuantumCyan
                 )
             }
         }

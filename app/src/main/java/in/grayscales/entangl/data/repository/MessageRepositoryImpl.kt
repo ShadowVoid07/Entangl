@@ -42,22 +42,35 @@ class MessageRepositoryImpl(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val decryptedCache = ConcurrentHashMap<String, String>()
 
-    init {
-        // 1. Listen for Delivery ACKs
-        networkTransport.addAckListener { messageId ->
-            Log.i("MessageRepository", "Delivery ACK received for message $messageId")
-            messageDao.updateStatus(messageId, 2) // 2 = DELIVERED
+    /**
+     * Bounded plaintext cache: caps memory and limits heap lifetime of decrypted
+     * content. Evicts an arbitrary oldest entry when full (flood resistance).
+     */
+    private fun cachePlaintext(id: String, plaintext: String) {
+        if (decryptedCache.size >= MAX_CACHE_ENTRIES) {
+            val iterator = decryptedCache.keys.iterator()
+            if (iterator.hasNext()) {
+                iterator.next()
+                iterator.remove()
+            }
         }
+        decryptedCache[id] = plaintext
+    }
 
-        // 2. Listen for Incoming Messages
+    init {
+        // 1. Listen for Incoming Messages (ACKs included: dispatch fans them out to
+        // normal listeners so the verified TYPE_DELIVERY_ACK branch below — signature,
+        // age, key-pinning — gates every DELIVERED marking. The old unverified
+        // ackListener path is intentionally NOT registered: forged relay ACKs must
+        // never flip delivery state.)
         networkTransport.addListener { envelope ->
             handleIncomingEnvelope(envelope)
         }
 
-        // 3. Start listening on persistent local inbox topic
+        // 2. Start listening on persistent local inbox topic
         networkTransport.startListening(nodeIdentityManager.localUid)
 
-        // 4. Retry any failed outgoing messages
+        // 3. Retry any failed outgoing messages + incomplete handshakes
         scope.launch {
             retryFailedMessages()
         }
@@ -66,6 +79,11 @@ class MessageRepositoryImpl(
     private suspend fun handleIncomingEnvelope(envelope: TransportEnvelope) {
         val senderUid = envelope.senderUid
         if (senderUid.isBlank()) return
+
+        // Blocked peers are dropped silently: no decrypt, no store, no notification.
+        if (contactDao.getByUid(senderUid)?.isBlocked == true) {
+            return
+        }
 
         // Anti-replay: reject envelopes with timestamps more than 10 minutes old or in the future
         val now = System.currentTimeMillis()
@@ -136,6 +154,15 @@ class MessageRepositoryImpl(
         }
 
         when (envelope.type) {
+            TransportEnvelope.TYPE_DELIVERY_ACK -> {
+                // Verified ACK: signature, age, and key-pinning already enforced above.
+                // The envelope id IS the original message id; only our own outgoing
+                // messages may transition to DELIVERED — never anyone else's row.
+                val target = messageDao.getById(envelope.id)
+                if (target != null && target.direction == 1) {
+                    messageDao.updateStatus(envelope.id, 2) // 2 = DELIVERED
+                }
+            }
             TransportEnvelope.TYPE_IDENTITY_ROTATION -> {
                 val cert = SuccessionCertificate.fromByteArray(envelope.ciphertext)
                 if (cert != null && kpg != null && SuccessionCertificate.verify(cert, kpg)) {
@@ -163,11 +190,16 @@ class MessageRepositoryImpl(
                 }
             }
             TransportEnvelope.TYPE_SCAN_PING -> {
-                // Rate-limit: ignore duplicate pings within 30s (replay/spam resistance)
                 val existing = contactDao.getByUid(senderUid)
+                // Rate-limit notifications, but NEVER drop inbound proof: a back-to-back
+                // reciprocal scan arrives within seconds of our own outbound scan, and
+                // returning early here would lose hasBeenScanned and stall mutual forever.
                 if (existing != null && (now - (existing.lastSeenAt ?: 0)) < 30_000L) {
-                    // Still update lastSeen silently but suppress duplicate notification/dialog storm
-                    // by skipping re-insert churn. Keep flags intact.
+                    if (!existing.hasBeenScanned) {
+                        contactDao.insertOrUpdate(
+                            existing.copy(hasBeenScanned = true, lastSeenAt = envelope.timestamp)
+                        )
+                    }
                     return
                 }
                 val displayName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
@@ -184,13 +216,18 @@ class MessageRepositoryImpl(
                     return
                 }
                 // Inbound proof: peer scanned our QR. Preserve outbound scan state.
-                // NEVER set isAccepted here — mutual requires explicit confirmMutualHandshake().
+                // Remember completed handshakes: a ping must NEVER lock an accepted
+                // chat back to pending (that caused the endless scan-verify loop).
+                // If we already scanned them (mutual just completed on their scan),
+                // unlock immediately so neither side is stuck tapping SCAN again.
+                val wasAccepted = existing?.isAccepted == true
+                val keepsScannedPeer = existing?.hasScannedPeer == true
                 val contactEntity = existing?.copy(
                     displayName = displayName,
                     publicKey = if (envelope.senderIdentityPub.isNotEmpty()) envelope.senderIdentityPub else existing.publicKey,
                     onionAddress = if (envelope.senderOnion.isNotBlank()) envelope.senderOnion else existing.onionAddress,
                     lastSeenAt = envelope.timestamp,
-                    isAccepted = false,
+                    isAccepted = wasAccepted,
                     profileColor = profileColor ?: existing.profileColor,
                     hasBeenScanned = true
                 ) ?: ContactEntity(
@@ -207,6 +244,27 @@ class MessageRepositoryImpl(
                     hasBeenScanned = true
                 )
                 contactDao.insertOrUpdate(contactEntity)
+                if (!wasAccepted && keepsScannedPeer && contactEntity.publicKey.isNotEmpty() &&
+                    !contactEntity.safetyNumber.startsWith("Pending")
+                ) {
+                    // We scanned first, they just scanned back: mutual complete.
+                    try {
+                        cryptoManager.initializeSession(senderUid, contactEntity.publicKey, contactEntity.onionAddress)
+                        unlockPendingMessages(senderUid)
+                        contactDao.insertOrUpdate(contactEntity.copy(isAccepted = true))
+                    } catch (e: Exception) {
+                        Log.w("MessageRepository", "Auto-unlock on reciprocal ping failed: ${e.message}")
+                    }
+                }
+                // Handshake convergence: if WE already scanned them, echo our ping so
+                // one-sided packet loss cannot strand mutual forever (either direction's
+                // surviving ping completes both sides; auto-unlock then flips accepted
+                // and later echoes stop mattering). Rate-limited by the 30s gate above.
+                if (contactEntity.hasScannedPeer && !contactEntity.isBlocked) {
+                    scope.launch {
+                        echoScanPing(senderUid)
+                    }
+                }
                 notificationManager.showScanPingNotification(senderUid, displayName)
             }
 
@@ -253,7 +311,7 @@ class MessageRepositoryImpl(
                 // 2. Insert an in-chat status notice in the conversation stream
                 val noticeId = "accept-${envelope.id}"
                 val noticeText = "$peerName accepted your connection request"
-                decryptedCache[noticeId] = noticeText
+                cachePlaintext(noticeId, noticeText)
                 val entity = MessageEntity(
                     id = noticeId,
                     contactUid = senderUid,
@@ -272,10 +330,14 @@ class MessageRepositoryImpl(
 
                 if (contactEntity != null && contactEntity.isAccepted) {
                     // Established and accepted contact!
+                    // decryptWithHeal: a peer restart/rescan resets their counters to
+                    // genesis while ours advanced. Only the true peer holds a
+                    // signature-valid envelope, so a single reset+retry on failure
+                    // re-syncs deterministic chains instead of stranding PENDING forever.
                     try {
-                        val plaintextBytes = cryptoManager.decryptMessage(senderUid, rawCiphertext)
+                        val plaintextBytes = decryptWithHeal(senderUid, rawCiphertext)
                         val plaintext = plaintextBytes.decodeToString()
-                        decryptedCache[envelope.id] = plaintext
+                        cachePlaintext(envelope.id, plaintext)
 
                         val entity = MessageEntity(
                             id = envelope.id,
@@ -348,6 +410,9 @@ class MessageRepositoryImpl(
         // verifications + safety confirmation (isAccepted==true).
         val gateContact = contactDao.getByUid(contactUid)
             ?: throw IllegalStateException("Unknown contact $contactUid — complete mutual QR handshake first")
+        if (gateContact.isBlocked) {
+            throw IllegalStateException("Contact $contactUid is blocked — unblock to resume messaging")
+        }
         if (!gateContact.isAccepted || !gateContact.hasScannedPeer || !gateContact.hasBeenScanned) {
             throw IllegalStateException(
                 "Mutual handshake incomplete for $contactUid " +
@@ -356,22 +421,25 @@ class MessageRepositoryImpl(
             )
         }
 
-        // Auto-session recovery: if process restarted or session key was uninitialized,
-        // recover from contactDao public key before encrypting
-        val contact = gateContact
-        if (contact.publicKey.isNotEmpty()) {
-            try {
-                cryptoManager.initializeSession(contactUid, contact.publicKey, contact.onionAddress)
-            } catch (e: Exception) {
-                Log.w("MessageRepository", "Session auto-init in send encountered: ${e.message}")
-            }
+        // Session continuity: NEVER re-initialize here. initializeSession resets both
+        // ratchet chains to genesis, so calling it per send makes every outgoing message
+        // reuse seq 0 while the peer's receive chain has advanced — permanent
+        // "Encrypted message" failures after the first exchange. Chains are a pure
+        // deterministic function of the root, so positions self-sync via header seq;
+        // only a missing session (fresh install/restart before any handshake event)
+        // needs a one-time init, detected via encrypt's own IllegalStateException.
+        // Double Ratchet inner encryption (chain advances inside encryptMessage)
+        val ciphertext = try {
+            cryptoManager.encryptMessage(contactUid, plaintext.encodeToByteArray())
+        } catch (e: IllegalStateException) {
+            if (gateContact.publicKey.isEmpty()) throw e
+            Log.w("MessageRepository", "No active session for $contactUid — one-time init from stored key")
+            cryptoManager.initializeSession(contactUid, gateContact.publicKey, gateContact.onionAddress)
+            cryptoManager.encryptMessage(contactUid, plaintext.encodeToByteArray())
         }
 
-        // Double Ratchet inner encryption
-        val ciphertext = cryptoManager.encryptMessage(contactUid, plaintext.encodeToByteArray())
-
-        // Cache plaintext in memory only
-        decryptedCache[id] = plaintext
+        // Cache plaintext in memory only (bounded)
+        cachePlaintext(id, plaintext)
 
         val entity = MessageEntity(
             id = id,
@@ -423,6 +491,28 @@ class MessageRepositoryImpl(
         }
     }
 
+    /**
+     * Decrypt with one-shot resync. Deterministic chains self-sync positions via
+     * header seq, but a peer restart/rescan resets their counters while ours
+     * advanced. Safe to reset+retry once: only signature-verified peer envelopes
+     * reach here, and a reset is idempotent when already in sync (retry then
+     * fails identically and the message stays PENDING).
+     */
+    private suspend fun decryptWithHeal(contactUid: String, rawCiphertext: ByteArray): ByteArray {
+        try {
+            return cryptoManager.decryptMessage(contactUid, rawCiphertext)
+        } catch (first: Exception) {
+            val contact = contactDao.getByUid(contactUid) ?: throw first
+            if (!contact.isAccepted || contact.publicKey.isEmpty()) throw first
+            try {
+                cryptoManager.initializeSession(contactUid, contact.publicKey, contact.onionAddress)
+                return cryptoManager.decryptMessage(contactUid, rawCiphertext)
+            } catch (_: Exception) {
+                throw first
+            }
+        }
+    }
+
     override suspend fun unlockPendingMessages(contactUid: String) {
         val messages = messageDao.getMessagesForContact(contactUid)
         for (msg in messages) {
@@ -430,9 +520,9 @@ class MessageRepositoryImpl(
                 val cached = decryptedCache[msg.id]
                 if (cached == null || cached == "Encrypted message" || msg.status == 0) {
                     try {
-                        val plaintextBytes = cryptoManager.decryptMessage(contactUid, msg.ciphertext)
+                        val plaintextBytes = decryptWithHeal(contactUid, msg.ciphertext)
                         val plaintext = plaintextBytes.decodeToString()
-                        decryptedCache[msg.id] = plaintext
+                        cachePlaintext(msg.id, plaintext)
                         messageDao.updateStatus(msg.id, 2) // DELIVERED
                         networkTransport.sendDeliveryAck(msg.id, contactUid, nodeIdentityManager.localUid)
                     } catch (e: Exception) {
@@ -444,6 +534,20 @@ class MessageRepositoryImpl(
     }
 
     suspend fun retryFailedMessages() {
+        // Handshake convergence first: re-send our scan proof for every half-open
+        // handshake (we scanned, not yet accepted). Covers SCAN_PING loss and
+        // app-kill between scan and transmit — no rescan required.
+        try {
+            val halfOpen = contactDao.getAll().filter {
+                it.hasScannedPeer && !it.isAccepted && !it.isBlocked
+            }
+            for (contact in halfOpen) {
+                echoScanPing(contact.uid)
+            }
+        } catch (e: Exception) {
+            Log.w("MessageRepository", "Handshake retry sweep failed: ${e.message}")
+        }
+
         val pendingOutgoing = messageDao.getPendingOutgoingMessages()
         if (pendingOutgoing.isEmpty()) return
 
@@ -477,14 +581,36 @@ class MessageRepositoryImpl(
         }
     }
 
-    override suspend fun receiveAndStore(message: Message) {
-        decryptedCache[message.id] = message.plaintext
-        val ciphertext = try {
-            cryptoManager.encryptMessage(message.contactUid, message.plaintext.encodeToByteArray())
+    /**
+     * Best-effort re-transmission of our scan proof. Fire-and-forget by design:
+     * the receiver's 30s rate gate + type:id dedup absorb duplicates, and either
+     * direction's surviving ping completes mutual via auto-unlock.
+     */
+    private suspend fun echoScanPing(recipientUid: String) {
+        val identityPub = try {
+            cryptoManager.getLocalIdentityPublicKey() ?: return
         } catch (_: Exception) {
-            // For protocol events, system notices, or pre-session messages where ratchet session is not yet active
-            message.plaintext.encodeToByteArray()
+            return
         }
+        try {
+            networkTransport.sendScanPing(
+                recipientUid = recipientUid,
+                localUid = nodeIdentityManager.localUid,
+                localUsername = nodeIdentityManager.username ?: "",
+                localIdentityPub = identityPub,
+                localOnion = nodeIdentityManager.localOnion,
+                localProfileColor = nodeIdentityManager.profileColor
+            )
+        } catch (e: Exception) {
+            Log.w("MessageRepository", "Scan echo to $recipientUid failed: ${e.message}")
+        }
+    }
+
+    override suspend fun receiveAndStore(message: Message) {
+        cachePlaintext(message.id, message.plaintext)
+        // Never persist plaintext: if no ratchet session exists the caller has a
+        // handshake bug — fail loudly instead of writing cleartext to disk.
+        val ciphertext = cryptoManager.encryptMessage(message.contactUid, message.plaintext.encodeToByteArray())
         val entity = MessageEntity.fromDomain(message, ciphertext)
         messageDao.insertOrUpdate(entity)
     }
@@ -514,17 +640,17 @@ class MessageRepositoryImpl(
                             val contact = contactDao.getByUid(contactUid)
                             val name = contact?.displayName?.ifBlank { null } ?: "Peer"
                             val resolved = "$name accepted your connection request"
-                            decryptedCache[entity.id] = resolved
+                            cachePlaintext(entity.id, resolved)
                             resolved
                         } else {
                             val resolved = rawNotice.ifBlank { "Notice" }
-                            decryptedCache[entity.id] = resolved
+                            cachePlaintext(entity.id, resolved)
                             resolved
                         }
                     } else {
                         try {
                             val decrypted = cryptoManager.decryptMessage(contactUid, entity.ciphertext).decodeToString()
-                            decryptedCache[entity.id] = decrypted
+                            cachePlaintext(entity.id, decrypted)
                             decrypted
                         } catch (_: Exception) {
                             "Encrypted message"
@@ -541,6 +667,12 @@ class MessageRepositoryImpl(
         messageDao.deleteExpired(now)
     }
 
+    override suspend fun clearChat(contactUid: String) {
+        val ids = messageDao.getMessagesForContact(contactUid).map { it.id }
+        messageDao.deleteForContact(contactUid)
+        ids.forEach { decryptedCache.remove(it) }
+    }
+
     override suspend fun getPendingCount(): Int {
         return messageDao.getPendingCount()
     }
@@ -548,6 +680,8 @@ class MessageRepositoryImpl(
     companion object {
         private const val MAX_SEND_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
+        /** Cap for in-memory decrypted plaintext (flood/memory hygiene). */
+        private const val MAX_CACHE_ENTRIES = 500
         /** Maximum age of an incoming envelope timestamp (24 hours) before it's rejected as stale replay */
         private const val ENVELOPE_MAX_AGE_MS = 24 * 60 * 60 * 1000L
         /** Maximum allowed clock drift into the future (15 minutes) */

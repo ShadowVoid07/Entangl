@@ -24,7 +24,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 @Database(
     entities = [ContactEntity::class, MessageEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(CryptoTypeConverters::class)
@@ -73,6 +73,13 @@ abstract class EntanglDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Local-only block flag for per-contact delete/clear/block management.
+                db.execSQL("ALTER TABLE contacts ADD COLUMN isBlocked INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var INSTANCE: EntanglDatabase? = null
 
@@ -93,7 +100,7 @@ abstract class EntanglDatabase : RoomDatabase() {
                 DB_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration(true)
                 .build()
         }

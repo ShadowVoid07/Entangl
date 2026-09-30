@@ -197,13 +197,6 @@ fun EditProfileScreen(
                         }
                     })
                 )
-
-                Text(
-                    text = if (usernameInput.isBlank()) "Enter 1 to 25 characters to identify yourself to peers" else "Handle will be permanently bound to your device key",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 9.sp,
-                    color = if (usernameInput.isBlank()) SubatomicGray else QuantumCyan.copy(alpha = 0.8f)
-                )
             }
 
             // Avatar Color Palette Section

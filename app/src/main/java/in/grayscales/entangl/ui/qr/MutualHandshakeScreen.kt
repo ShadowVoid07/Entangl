@@ -55,6 +55,7 @@ import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
+import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
@@ -62,6 +63,7 @@ import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
+import kotlinx.coroutines.launch
 
 /**
  * Unified Mutual Handshake Screen:
@@ -80,7 +82,8 @@ fun MutualHandshakeScreen(
     onTransferDetected: ((TransferQrPayload) -> Unit)? = null,
     onBack: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    onOpenSettings: () -> Unit = onSettingsClick
+    onOpenSettings: () -> Unit = onSettingsClick,
+    onMutualUnlocked: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -110,6 +113,35 @@ fun MutualHandshakeScreen(
     val newlyDetectedPeer = contacts.firstOrNull { it.uid !in initialUids && it.uid !in dismissedPeerUids }
 
     if (newlyDetectedPeer != null) {
+        // Direction-aware handshake dialog. The old code showed "PEER SCANNED YOUR
+        // BEACON" for every new row — including contacts WE created by scanning the
+        // peer (outbound). That is why users saw "Peer scanned" right after THEY
+        // scanned. Derive direction from flags set ONLY by real proofs:
+        // hasScannedPeer <- our verified optical scan; hasBeenScanned <- verified SCAN_PING.
+        val dlgYouScanned = newlyDetectedPeer.hasScannedPeer
+        val dlgTheyScanned = newlyDetectedPeer.hasBeenScanned
+        val dlgPeerName = newlyDetectedPeer.displayName?.ifBlank { null }
+            ?: "Peer ${newlyDetectedPeer.uid.take(6).uppercase()}"
+        val dlgTitle = when {
+            dlgYouScanned && dlgTheyScanned -> "MUTUAL SCAN COMPLETE"
+            dlgYouScanned -> "YOU SCANNED PEER"
+            else -> "PEER SCANNED YOUR CODE"
+        }
+        val dlgBody = when {
+            dlgYouScanned && dlgTheyScanned ->
+                "Both codes scanned with $dlgPeerName.\nCompare safety numbers, then unlock below."
+            dlgYouScanned ->
+                "You scanned $dlgPeerName.\nKeep your code up for them to scan back — chat stays locked until then."
+            else ->
+                "$dlgPeerName scanned your code.\nScan them back to complete mutual verification."
+        }
+        // Outbound (we scanned): point at Show tab so peer can scan us.
+        // Inbound (they scanned): point at Scan tab. Mutual: just dismiss to ledger.
+        val dlgButtonText = when {
+            dlgYouScanned && !dlgTheyScanned -> "SHOW MY CODE"
+            else -> "SCAN PEER CODE"
+        }
+        val dlgButtonTab = if (dlgYouScanned && !dlgTheyScanned) 0 else 1
         Dialog(onDismissRequest = {
             dismissedPeerUids = dismissedPeerUids + newlyDetectedPeer.uid
         }) {
@@ -148,7 +180,7 @@ fun MutualHandshakeScreen(
                     }
 
                     Text(
-                        text = "PEER SCANNED YOUR BEACON",
+                        text = dlgTitle,
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
@@ -158,7 +190,7 @@ fun MutualHandshakeScreen(
                     )
 
                     Text(
-                        text = "$peerName scanned your QR code and requested connection.\nAccept to verify and chat securely.",
+                        text = dlgBody,
                         fontFamily = QuantumMonospace,
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
@@ -170,14 +202,12 @@ fun MutualHandshakeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // MILITARY-GRADE: single action only — force reciprocal optical scan.
-                        // OPEN CHAT bypass removed: chat unlock requires hasScannedPeer && hasBeenScanned
-                        // && explicit safety confirm via confirmMutualHandshake(). Stay on profile.
+                        // Navigation only — no state mutation. Scan proofs come exclusively
+                        // from verified optical scans (outbound) and SCAN_PING receipts (inbound).
                         Button(
                             onClick = {
-                                chatViewModel.acceptContact(newlyDetectedPeer)
                                 dismissedPeerUids = dismissedPeerUids + newlyDetectedPeer.uid
-                                selectedTab = 1
+                                selectedTab = dlgButtonTab
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(
@@ -194,7 +224,7 @@ fun MutualHandshakeScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "SCAN PEER BACK",
+                                text = dlgButtonText,
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 10.sp,
@@ -208,7 +238,7 @@ fun MutualHandshakeScreen(
                     val theyScanned = newlyDetectedPeer.hasBeenScanned
                     Text(
                         text = "MUTUAL PROGRESS: YOU SCANNED ${if (youScanned) "✓" else "○"} • " +
-                            "THEY SCANNED ✓ • CHAT ${if (newlyDetectedPeer.isAccepted) "UNLOCKED" else "LOCKED"}",
+                            "THEY SCANNED ${if (theyScanned) "✓" else "○"} • CHAT ${if (newlyDetectedPeer.isAccepted) "UNLOCKED" else "LOCKED"}",
                         fontFamily = QuantumMonospace,
                         fontSize = 9.sp,
                         color = SubatomicGray,
@@ -461,10 +491,13 @@ fun MutualHandshakeScreen(
                         theyScanned = pending.hasBeenScanned,
                         safetyNumber = pending.safetyNumber,
                         onUnlock = {
-                            // Safety already confirmed in HandshakeConfirmDialog checkbox;
-                            // this final tap enforces both optical directions before session init.
-                            chatViewModel.confirmMutualHandshake(pending.uid, safetyConfirmed = true)
-                        }
+                            // Suspend confirm returns real success; navigate only then.
+                            // Scope here is composable-safe via rememberCoroutineScope in card.
+                        },
+                        onUnlockSuspend = { uid ->
+                            chatViewModel.confirmMutualHandshake(uid, safetyConfirmed = true)
+                        },
+                        onUnlocked = onMutualUnlocked
                     )
                 }
             }
@@ -479,10 +512,14 @@ private fun MutualPendingCard(
     youScanned: Boolean,
     theyScanned: Boolean,
     safetyNumber: String,
-    onUnlock: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onUnlock: () -> Unit = {},
+    onUnlockSuspend: (suspend (String) -> Boolean)? = null,
+    onUnlocked: () -> Unit = {}
 ) {
     val ready = youScanned && theyScanned && !safetyNumber.startsWith("Pending")
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var failed by androidx.compose.runtime.remember { mutableStateOf(false) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -509,15 +546,26 @@ private fun MutualPendingCard(
             )
             if (!ready) {
                 Text(
-                    text = if (!youScanned) "Step 1/2: scan their QR on SENSOR tab."
-                    else "Step 2/2: keep your BEACON up for them to scan back, then compare safety numbers.",
+                    text = if (!youScanned) "Step 1/2: scan their code on the Scan tab."
+                    else "Step 2/2: keep your code up for them to scan back, then compare safety numbers.",
                     fontFamily = QuantumMonospace,
                     fontSize = 10.sp,
                     color = SubatomicGray
                 )
             } else {
                 Button(
-                    onClick = onUnlock,
+                    onClick = {
+                        scope.launch {
+                            val ok = onUnlockSuspend?.invoke(peerUid) == true
+                            if (ok) {
+                                failed = false
+                                onUnlock()
+                                onUnlocked()
+                            } else {
+                                failed = true
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = QuantumGreen, contentColor = CyberDark),
                     shape = RoundedCornerShape(8.dp)
@@ -527,6 +575,14 @@ private fun MutualPendingCard(
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp
+                    )
+                }
+                if (failed) {
+                    Text(
+                        text = "Still incomplete — both scans and safety match are required.",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 10.sp,
+                        color = IsotopeMagenta
                     )
                 }
             }

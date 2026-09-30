@@ -1,6 +1,5 @@
 package `in`.grayscales.entangl.ui.home
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -107,11 +106,9 @@ fun ListDetailPaneScaffold(
                 }
             }
         } else {
-            // Compact Phone Single-Pane: Pushes List to Detail with Back navigation
-            BackHandler(enabled = isDetailVisible) {
-                onBackFromDetail()
-            }
-
+            // Compact Phone Single-Pane: Pushes List to Detail with Back navigation.
+            // Back is owned by MainActivity (single owner) to avoid double-pop with
+            // the detail-visible handler that previously lived here.
             AnimatedContent(
                 targetState = isDetailVisible,
                 transitionSpec = {
@@ -167,7 +164,10 @@ fun HomeChatLayout(
     localUsername: String = "",
     localProfileColor: String = "",
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
-    isPrivacyBlurEnabled: Boolean = true
+    isPrivacyBlurEnabled: Boolean = true,
+    onClearChat: (Contact) -> Unit = {},
+    onBlockToggle: (Contact) -> Unit = {},
+    onUnblockContact: () -> Unit = {}
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isDualPane = maxWidth >= 600.dp
@@ -193,7 +193,9 @@ fun HomeChatLayout(
                     localUsername = localUsername,
                     localProfileColor = localProfileColor,
                     onUpdateProfile = onUpdateProfile,
-                    isPrivacyBlurEnabled = isPrivacyBlurEnabled
+                    isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+                    onClearChat = onClearChat,
+                    onBlockToggle = onBlockToggle
                 )
             },
             detailPane = {
@@ -209,6 +211,7 @@ fun HomeChatLayout(
                         onShowMyQr = onShowMyQr,
                         onScanPeerQr = onScanQr,
                         onAcceptContact = { onAcceptContact(activeContact) },
+                        onUnblockContact = onUnblockContact,
                         onDeclineContact = {
                             onDeleteContact(activeContact)
                             onSelectContact(null)

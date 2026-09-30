@@ -42,4 +42,10 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) > 0 FROM messages WHERE id = :id")
     suspend fun existsById(id: String): Boolean
+
+    @Query("SELECT * FROM messages WHERE id = :id")
+    suspend fun getById(id: String): MessageEntity?
+
+    @Query("DELETE FROM messages WHERE contactUid = :contactUid")
+    suspend fun deleteForContact(contactUid: String)
 }

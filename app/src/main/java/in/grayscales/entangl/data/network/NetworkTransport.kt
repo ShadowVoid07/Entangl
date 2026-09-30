@@ -709,23 +709,27 @@ class NetworkTransport(
 
         log("Dispatched incoming envelope: id=${envelope.id}, type=${envelope.type}, from=${envelope.senderUid}")
 
+        // ACKs fan out to BOTH paths: legacy ack callbacks (kept for API compat)
+        // and normal listeners so MessageRepositoryImpl can signature-verify the
+        // envelope and confirm the message is really ours before marking DELIVERED.
+        // Previously ACKs bypassed all verification — any relay observer could forge
+        // DELIVERED receipts with a bare message id.
         if (envelope.type == TransportEnvelope.TYPE_DELIVERY_ACK) {
-            val callbacks = synchronized(ackListeners) { ackListeners.toList() }
-            for (cb in callbacks) {
+            val ackCallbacks = synchronized(ackListeners) { ackListeners.toList() }
+            for (cb in ackCallbacks) {
                 try {
                     cb(envelope.id)
                 } catch (e: Exception) {
                     log("Error in ACK callback: ${e.message}")
                 }
             }
-        } else {
-            val callbacks = synchronized(listeners) { listeners.toList() }
-            for (cb in callbacks) {
-                try {
-                    cb(envelope)
-                } catch (e: Exception) {
-                    log("Error in envelope callback: ${e.message}")
-                }
+        }
+        val callbacks = synchronized(listeners) { listeners.toList() }
+        for (cb in callbacks) {
+            try {
+                cb(envelope)
+            } catch (e: Exception) {
+                log("Error in envelope callback: ${e.message}")
             }
         }
     }

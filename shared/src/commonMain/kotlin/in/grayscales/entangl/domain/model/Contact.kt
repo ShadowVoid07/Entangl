@@ -19,7 +19,10 @@ data class Contact(
     // sent SCAN_PING proving they scanned our QR (inbound). isAccepted may only become
     // true when both are true AND safety number explicitly confirmed out-of-band.
     val hasScannedPeer: Boolean = false,
-    val hasBeenScanned: Boolean = false
+    val hasBeenScanned: Boolean = false,
+    // Local-only mute: blocked peers cannot send or receive until unblocked.
+    // Never transmitted; enforced in MessageRepositoryImpl.
+    val isBlocked: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -35,6 +38,7 @@ data class Contact(
         if (profileColor != other.profileColor) return false
         if (hasScannedPeer != other.hasScannedPeer) return false
         if (hasBeenScanned != other.hasBeenScanned) return false
+        if (isBlocked != other.isBlocked) return false
         return true
     }
 
@@ -50,6 +54,7 @@ data class Contact(
         result = 31 * result + (profileColor?.hashCode() ?: 0)
         result = 31 * result + hasScannedPeer.hashCode()
         result = 31 * result + hasBeenScanned.hashCode()
+        result = 31 * result + isBlocked.hashCode()
         return result
     }
 }

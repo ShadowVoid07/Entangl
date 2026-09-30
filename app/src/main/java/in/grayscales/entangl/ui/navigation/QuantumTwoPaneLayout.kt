@@ -31,7 +31,10 @@ fun QuantumTwoPaneLayout(
     localUsername: String = "",
     localProfileColor: String = "",
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
-    isPrivacyBlurEnabled: Boolean = true
+    isPrivacyBlurEnabled: Boolean = true,
+    onClearChat: (Contact) -> Unit = {},
+    onBlockToggle: (Contact) -> Unit = {},
+    onUnblockContact: () -> Unit = {}
 ) {
     HomeChatLayout(
         contacts = contacts,
@@ -52,6 +55,9 @@ fun QuantumTwoPaneLayout(
         localUsername = localUsername,
         localProfileColor = localProfileColor,
         onUpdateProfile = onUpdateProfile,
-        isPrivacyBlurEnabled = isPrivacyBlurEnabled
+        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+        onClearChat = onClearChat,
+        onBlockToggle = onBlockToggle,
+        onUnblockContact = onUnblockContact
     )
 }

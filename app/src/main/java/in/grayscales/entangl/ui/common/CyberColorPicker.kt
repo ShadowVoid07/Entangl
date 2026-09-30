@@ -2,12 +2,9 @@ package `in`.grayscales.entangl.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,7 +16,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
@@ -50,12 +46,10 @@ import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
-import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CyberColorPicker(
     selectedHex: String,
@@ -399,69 +393,6 @@ fun CyberColorPicker(
                     inactiveTrackColor = ParticleBorder
                 )
             )
-        }
-
-        // Quick Quantum Presets
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Palette,
-                    contentDescription = null,
-                    tint = QuantumCyan,
-                    modifier = Modifier.size(13.dp)
-                )
-                Text(
-                    text = "QUANTUM PRESETS",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SubatomicGray,
-                    letterSpacing = 1.sp
-                )
-            }
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ColorUtils.PRESETS.forEach { preset ->
-                    val isSelected = currentHex.equals(preset.hex, ignoreCase = true)
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(preset.color)
-                            .border(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) NeutronWhite else ParticleBorder,
-                                shape = CircleShape
-                            )
-                            .clickable {
-                                val (h, s, v) = ColorUtils.colorToHsv(preset.color)
-                                hue = h
-                                saturation = s.coerceIn(0.2f, 1f)
-                                brightness = v.coerceIn(0.4f, 1f)
-                                hexInputText = preset.hex.removePrefix("#")
-                                isInputValid = true
-                                onColorChanged(preset.hex)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Selected",
-                                tint = if (preset.hex == "#FFE600") Color.Black else Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

@@ -114,21 +114,4 @@ object ColorUtils {
             alpha = 1f
         )
     }
-
-    data class Preset(
-        val name: String,
-        val hex: String,
-        val color: Color
-    )
-
-    val PRESETS = listOf(
-        Preset("Quantum Cyan", "#00F0FF", Color(0xFF00F0FF)),
-        Preset("Matrix Emerald", "#00FF9D", Color(0xFF00FF9D)),
-        Preset("Laser Crimson", "#FF003C", Color(0xFFFF003C)),
-        Preset("Singularity Purple", "#9D00FF", Color(0xFF9D00FF)),
-        Preset("Electric Amber", "#FFE600", Color(0xFFFFE600)),
-        Preset("Cyber Rose", "#FF007F", Color(0xFFFF007F)),
-        Preset("Deep Photon", "#00A3FF", Color(0xFF00A3FF)),
-        Preset("Plasma Violet", "#7000FF", Color(0xFF7000FF))
-    )
 }

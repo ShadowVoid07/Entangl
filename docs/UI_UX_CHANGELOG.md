@@ -175,3 +175,46 @@
   6. **Bilateral Cryptographic End-to-End Verification (`CryptoAndNetworkSecurityTest`)**:
      - Added comprehensive unit test `testTwoEndedMutualSessionEncryptionAndDecryption`: verifies Alice scanning Bob, Alice sending a message, Bob attempting decryption before scanning (verifying initial encrypted state), Bob scanning Alice's QR code, Bob decrypting Alice's message, Bob replying, and Alice decrypting Bob's reply.
 
+---
+
+### Entry 17
+- **Timestamp**: 2026-09-30 00:00:00
+- **File**: `shared/.../HandshakeManager.kt`, `shared/.../Contact.kt`, `app/.../ContactEntity.kt`, `app/.../EntanglDatabase.kt` (v3 + `MIGRATION_2_3`), `app/.../ChatViewModel.kt` (`confirmMutualHandshake`), `app/.../MessageRepositoryImpl.kt`, `app/.../MutualHandshakeScreen.kt` (`MutualPendingCard`, `OPEN CHAT` removed), `app/.../HandshakeConfirmDialog.kt` (safety checkbox), `app/.../MainActivity.kt` (stay on profile), `app/src/test/.../HandshakeManagerTest.kt` (11 tests)
+- **Purpose**: Strict Mutual Handshake Enforcement (v4.3.0) — `A scans B → B scans A` while on profile, no gaps:
+  1. Added `hasScannedPeer`/`hasBeenScanned`; `isAccepted` only via `confirmMutualHandshake` (both ✓ + safety confirmed). `addContactFromHandshake` records outbound only; `acceptContact` records inbound receipt only; `OPEN CHAT` bypass deleted; `onPeerConfirmed` stays on `HANDSHAKE`.
+  2. `HandshakeManager`: `CONFIRM`-must-echo-`INITIATE`, single-use nonce (replay rejected), structural checks, TTL 60s + 10s skew, self-scan guard via `localUidHint`.
+  3. `MessageRepositoryImpl`: `SCAN_PING` inbound-only + 30s rate-limit + key-pinning; `SCAN_ACCEPT` grants nothing; `send()` throws unless mutual-complete.
+  4. Tests: `HandshakeManagerTest` 7→11 (CONFIRM-without-INITIATE, nonce-mismatch, replay, structural). Suite 45/45 pass.
+
+---
+
+### Entry 18
+- **Timestamp**: 2026-09-30 00:00:00
+- **File**: `app/.../ui/theme/Color.kt` (`LunarGray`), `app/.../ui/chat/MessageBubble.kt`, `app/.../ui/chat/ContactsScreen.kt` (48dp), `app/.../ui/qr/QuantumScannerOverlay.kt` (reticle), `app/.../ui/qr/HandshakeConfirmDialog.kt` (digits-only), `app/.../data/repository/MessageRepositoryImpl.kt` (always-true fix), `docs/Project Plan Document.md` (§10.4/§10.5, v4.4.0), `docs/UI_UX_Design_Plan.md` (§6)
+- **Purpose**: UI Clarity + Code Quality Pass (v4.4.0):
+  1. Chat frames per plan §4.1: 4dp panel + neon edge rail + `[ msg ]` brackets, `[SYS.TME: HH:mm:ss] [EPOCH] [TTL] [SENDING/SENT/DELVRD]` 11sp `LunarGray`; clipboard via platform `ClipboardManager` + 30s auto-clear, `@Suppress` removed (zero-suppression policy restored).
+  2. Contrast/touch: `LunarGray #9AA3B2` for secondary copy; handshake/settings 38dp→48dp; scanner circular reticle + crosshairs; safety scramble digits-only.
+  3. Quality: KMP-safe nonce hex, unused imports removed; `lintDebug` 0 code issues (24 dependency-version notices); full suite green.
+
+---
+
+### Entry 19
+- **Timestamp**: 2026-09-30 00:00:00
+- **File**: `shared/.../Contact.kt` + `app/.../ContactEntity.kt` (`isBlocked`), `app/.../EntanglDatabase.kt` (v4 + `MIGRATION_3_4`), `app/.../MessageDao.kt` (`deleteForContact`), `shared/.../MessageRepository.kt` + `MessageRepositoryImpl.kt` (`clearChat`, block drops/throws), `app/.../ChatViewModel.kt` (`clearChatHistory`, `setBlocked`), `app/.../ui/chat/ContactOptionsDialog.kt` (new), `app/.../ui/home/ChatListRow.kt` (overflow menu + BLOCKED badge), `app/.../ui/chat/ContactsScreen.kt`, `app/.../ui/home/HomeChatLayout.kt`, `app/.../ui/navigation/QuantumTwoPaneLayout.kt`, `app/.../ui/chat/ChatScreen.kt` (blocked bar + Unblock), `app/.../MainActivity.kt`, `app/src/test/.../ContactManagementTest.kt` (3 tests)
+- **Purpose**: Per-contact delete / clear / block management:
+  1. Row tap still opens chat; new `⋮` overflow opens `ContactOptionsDialog` (Clear history / Block-Unblock / Delete, each with inline confirm). Delete reuses guarded purge flow.
+  2. Block is local-only persisted flag: incoming envelopes dropped silently, `send()` throws (caught, no crash), keys/handshake kept so unblock resumes instantly. Blocked rows/badges + chat blocked bar with 1-tap Unblock.
+  3. Suite 47/47 `:app` pass; `lintDebug` 0 code issues.
+
+---
+
+### Entry 20
+- **Timestamp**: 2026-09-30 00:00:00
+- **File**: `app/.../data/network/NetworkTransport.kt` (`dispatchEnvelope` ACK fan-out), `app/.../data/local/dao/MessageDao.kt` (`getById`), `app/.../data/repository/MessageRepositoryImpl.kt` (verified ACK branch, ping echo, handshake retry sweep, `decryptWithHeal` reuse, `cachePlaintext` cap, plaintext-fallback throw), `app/.../ui/chat/ChatViewModel.kt` (PII logs `i→d`)
+- **Purpose**: Delivery reliability + military hardening without rescan:
+  1. ACKs now fan out to verified listeners; `DELIVERED` flips only after signature/age/key-pinning pass and the row is confirmed outgoing. Unverified `addAckListener` path unregistered — relay-forged receipts no longer work.
+  2. Ping echo: any processed `SCAN_PING` re-transmits our scan proof when we scanned them, so one-sided loss converges without rescan (rate-limited, terminates on accept).
+  3. `retryFailedMessages()` first sweeps half-open handshakes (`hasScannedPeer && !isAccepted`), covering ping loss + app-kill between scan and transmit; reconnect path (`NetworkMonitor`) already calls it.
+  4. Plaintext cache capped at 500 entries; `receiveAndStore` throws instead of persisting cleartext; PII moved from `Log.i` to `Log.d` (stripped in release).
+  5. Suite 47/47 `:app` pass; `lintDebug` 0 code issues.
+

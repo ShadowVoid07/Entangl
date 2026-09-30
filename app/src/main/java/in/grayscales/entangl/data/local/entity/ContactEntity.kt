@@ -17,7 +17,8 @@ data class ContactEntity(
     val isAccepted: Boolean = false,
     val profileColor: String? = null,
     val hasScannedPeer: Boolean = false,
-    val hasBeenScanned: Boolean = false
+    val hasBeenScanned: Boolean = false,
+    val isBlocked: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -33,6 +34,7 @@ data class ContactEntity(
         if (profileColor != other.profileColor) return false
         if (hasScannedPeer != other.hasScannedPeer) return false
         if (hasBeenScanned != other.hasBeenScanned) return false
+        if (isBlocked != other.isBlocked) return false
         return true
     }
 
@@ -48,6 +50,7 @@ data class ContactEntity(
         result = 31 * result + (profileColor?.hashCode() ?: 0)
         result = 31 * result + hasScannedPeer.hashCode()
         result = 31 * result + hasBeenScanned.hashCode()
+        result = 31 * result + isBlocked.hashCode()
         return result
     }
 
@@ -63,7 +66,8 @@ data class ContactEntity(
             isAccepted = isAccepted,
             profileColor = profileColor,
             hasScannedPeer = hasScannedPeer,
-            hasBeenScanned = hasBeenScanned
+            hasBeenScanned = hasBeenScanned,
+            isBlocked = isBlocked
         )
     }
 
@@ -80,7 +84,8 @@ data class ContactEntity(
                 isAccepted = contact.isAccepted,
                 profileColor = contact.profileColor,
                 hasScannedPeer = contact.hasScannedPeer,
-                hasBeenScanned = contact.hasBeenScanned
+                hasBeenScanned = contact.hasBeenScanned,
+                isBlocked = contact.isBlocked
             )
         }
     }

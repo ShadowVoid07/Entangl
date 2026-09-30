@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
@@ -145,18 +146,25 @@ fun ChatListRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     lastMessage: Message? = null,
-    isPrivacyBlurEnabled: Boolean = true
+    isPrivacyBlurEnabled: Boolean = true,
+    onOptionsClick: (() -> Unit)? = null
 ) {
     var isHolding by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
     val isPending = !contact.isAccepted
-    val borderColor = if (isSelected) QuantumCyan else ParticleBorder
+    val isBlocked = contact.isBlocked
+    val borderColor = when {
+        isSelected -> QuantumCyan
+        isBlocked -> IsotopeMagenta.copy(alpha = 0.6f)
+        else -> ParticleBorder
+    }
     val surfaceColor = if (isSelected) DarkMatterVariant else DarkMatter
     val peerColor = contact.profileColor?.let { ColorUtils.parseColorOrNull(it) } ?: QuantumCyan
-    val avatarTint = if (isPending) IsotopeMagenta else peerColor
+    val avatarTint = if (isPending || isBlocked) IsotopeMagenta else peerColor
 
     val previewText = when {
+        isBlocked -> "Blocked — messaging paused"
         isPending -> "Pending mutual handshake connection"
         lastMessage != null -> lastMessage.plaintext
         else -> "Secure ratchet channel established"
@@ -168,22 +176,6 @@ fun ChatListRow(
             .clip(RoundedCornerShape(12.dp))
             .background(surfaceColor)
             .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-            .pointerInput(contact.uid) {
-                detectTapGestures(
-                    onPress = {
-                        isHolding = true
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        val released = tryAwaitRelease()
-                        isHolding = false
-                        if (released) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
-                    },
-                    onTap = {
-                        onClick()
-                    }
-                )
-            }
             .padding(14.dp)
     ) {
         Row(
@@ -192,7 +184,24 @@ fun ChatListRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(contact.uid) {
+                        detectTapGestures(
+                            onPress = {
+                                isHolding = true
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val released = tryAwaitRelease()
+                                isHolding = false
+                                if (released) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                            onTap = {
+                                onClick()
+                            }
+                        )
+                    },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -319,7 +328,23 @@ fun ChatListRow(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (isPending) {
+                if (isBlocked) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(IsotopeMagenta.copy(alpha = 0.15f))
+                            .border(0.5.dp, IsotopeMagenta, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "BLOCKED",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IsotopeMagenta
+                        )
+                    }
+                } else if (isPending) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
@@ -353,6 +378,20 @@ fun ChatListRow(
                             color = SubatomicGray
                         )
                     }
+                }
+            }
+
+            if (onOptionsClick != null) {
+                androidx.compose.material3.IconButton(
+                    onClick = onOptionsClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Contact options",
+                        tint = SubatomicGray,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }

@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.domain.model.Message
+import `in`.grayscales.entangl.domain.model.MessageStatus
 import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
@@ -96,6 +97,7 @@ fun ChatScreen(
     onScanPeerQr: (() -> Unit)? = null,
     onAcceptContact: (() -> Unit)? = null,
     onDeclineContact: (() -> Unit)? = null,
+    onUnblockContact: (() -> Unit)? = null,
     isPeerTyping: Boolean = false
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -149,8 +151,10 @@ fun ChatScreen(
 
     val isUnaccepted = !contact.isAccepted
     val isPendingReciprocal = contact.safetyNumber.startsWith("Pending")
+    // Banner only while undecrypted PENDING exists. Healed messages flip to DELIVERED
+    // via unlock, so the banner clears itself instead of demanding SCAN forever.
     val hasEncryptedMessages = remember(messages) {
-        messages.any { it.plaintext == "Encrypted message" }
+        messages.any { it.plaintext == "Encrypted message" && it.status == MessageStatus.PENDING }
     }
     val isPendingChannel = isUnaccepted || isPendingReciprocal || hasEncryptedMessages
 
@@ -418,7 +422,10 @@ fun ChatScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
-                            onClick = { onAcceptContact?.invoke() },
+                            onClick = {
+                                onAcceptContact?.invoke()
+                                (onScanPeerQr ?: onShowMyQr)?.invoke()
+                            },
                             modifier = Modifier.weight(1.2f),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
@@ -434,7 +441,7 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Accept",
+                                text = "Scan to verify",
                                 fontFamily = QuantumMonospace,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
@@ -605,7 +612,8 @@ fun ChatScreen(
             }
         }
 
-        // Bottom Bar: Locked Info with 1-tap Accept when unaccepted, or Input Bar when accepted
+        // Bottom Bar: Locked Info with 1-tap Accept when unaccepted, blocked bar when
+        // blocked, or Input Bar when accepted
         if (isUnaccepted) {
             Surface(
                 modifier = Modifier
@@ -623,14 +631,14 @@ fun ChatScreen(
                     val peerName = contact.displayName ?: "this peer"
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Connection pending from $peerName",
+                            text = "Scan required from $peerName",
                             fontFamily = QuantumMonospace,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp,
                             color = NeutronWhite
                         )
                         Text(
-                            text = "Accept request to unlock direct encrypted chat",
+                            text = "Both codes + safety match unlocks chat",
                             fontFamily = QuantumMonospace,
                             fontSize = 10.sp,
                             color = SubatomicGray
@@ -638,7 +646,10 @@ fun ChatScreen(
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Button(
-                        onClick = { onAcceptContact?.invoke() },
+                        onClick = {
+                            onAcceptContact?.invoke()
+                            (onScanPeerQr ?: onShowMyQr)?.invoke()
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
@@ -653,11 +664,59 @@ fun ChatScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Accept & Chat",
+                            text = "Scan to unlock",
                             fontFamily = QuantumMonospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
+        } else if (contact.isBlocked) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, IsotopeMagenta.copy(alpha = 0.4f)),
+                color = DarkMatter
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Blocked — messaging paused",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            color = NeutronWhite
+                        )
+                        Text(
+                            text = "Incoming dropped, sending disabled",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 10.sp,
+                            color = SubatomicGray
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    OutlinedButton(
+                        onClick = { onUnblockContact?.invoke() },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = QuantumCyan
+                        ),
+                        border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.8f)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Unblock",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = QuantumCyan
                         )
                     }
                 }

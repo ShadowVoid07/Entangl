@@ -94,13 +94,4 @@ class ColorUtilsTest {
         val reconBlue = ColorUtils.hsvToColor(hB, sB, vB)
         assertEquals(ColorUtils.colorToHex(blue), ColorUtils.colorToHex(reconBlue))
     }
-
-    @Test
-    fun testPresetsIntegrity() {
-        assertEquals(8, ColorUtils.PRESETS.size)
-        for (preset in ColorUtils.PRESETS) {
-            assertTrue("Preset ${preset.name} hex must be valid", ColorUtils.isValidHexColor(preset.hex))
-            assertEquals("Preset hex must be formatted", preset.hex.uppercase(), ColorUtils.formatHexColor(preset.hex))
-        }
-    }
 }

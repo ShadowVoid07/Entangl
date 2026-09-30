@@ -218,40 +218,13 @@ fun HandshakeConfirmDialog(
                                 safetyNumber = verificationResult.safetyNumber
                             )
                             Text(
-                                text = "Call out or show this number to your peer while on this profile. " +
-                                    "Both screens must match exactly — this is your MITM proof. " +
-                                    "Chat unlocks only after A scans B AND B scans A AND both confirm match.",
+                                text = "Glance at your peer's screen — matching numbers mean no one tampered with the exchange. " +
+                                    "The number stays available under the shield icon in chat for later checks.",
                                 fontFamily = QuantumMonospace,
                                 fontSize = 9.sp,
                                 color = SubatomicGray,
                                 textAlign = TextAlign.Center,
                                 lineHeight = 13.sp
-                            )
-                        }
-
-                        // Military-grade explicit safety confirmation gate
-                        var safetyMatchConfirmed by remember { mutableStateOf(false) }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(DarkMatterVariant)
-                                .border(1.dp, ParticleBorder, RoundedCornerShape(8.dp))
-                                .padding(12.dp)
-                        ) {
-                            androidx.compose.material3.Checkbox(
-                                checked = safetyMatchConfirmed,
-                                onCheckedChange = { safetyMatchConfirmed = it }
-                            )
-                            Text(
-                                text = "Peer safety number matches on their screen (verified face-to-face)",
-                                fontFamily = QuantumMonospace,
-                                fontSize = 10.sp,
-                                color = NeutronWhite,
-                                lineHeight = 14.sp,
-                                modifier = Modifier.weight(1f)
                             )
                         }
 
@@ -262,13 +235,10 @@ fun HandshakeConfirmDialog(
                         ) {
                             Button(
                                 onClick = { onConfirm(verificationResult) },
-                                enabled = safetyMatchConfirmed,
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                                    disabledContainerColor = DarkMatterVariant,
-                                    disabledContentColor = SubatomicGray
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
@@ -276,15 +246,15 @@ fun HandshakeConfirmDialog(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
-                                    tint = if (safetyMatchConfirmed) MaterialTheme.colorScheme.onPrimary else SubatomicGray
+                                    tint = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (safetyMatchConfirmed) "RECORD SCAN & AWAIT RECIPROCAL" else "CONFIRM SAFETY MATCH TO CONTINUE",
+                                    text = "RECORD SCAN & CONTINUE",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
-                                    color = if (safetyMatchConfirmed) MaterialTheme.colorScheme.onPrimary else SubatomicGray
+                                    color = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
 

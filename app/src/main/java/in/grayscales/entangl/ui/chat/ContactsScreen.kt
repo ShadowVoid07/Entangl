@@ -75,10 +75,14 @@ fun ContactsScreen(
     localUsername: String = "",
     localProfileColor: String = "",
     onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
-    isPrivacyBlurEnabled: Boolean = true
+    isPrivacyBlurEnabled: Boolean = true,
+    onClearChat: (Contact) -> Unit = {},
+    onBlockToggle: (Contact) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var pendingContactToIgnore by remember { mutableStateOf<Contact?>(null) }
+    var optionsContact by remember { mutableStateOf<Contact?>(null) }
+    var contactToDelete by remember { mutableStateOf<Contact?>(null) }
 
     if (pendingContactToIgnore != null) {
         DeleteContactConfirmDialog(
@@ -88,6 +92,27 @@ fun ContactsScreen(
                 pendingContactToIgnore = null
             },
             onDismiss = { pendingContactToIgnore = null }
+        )
+    }
+
+    if (contactToDelete != null) {
+        DeleteContactConfirmDialog(
+            contact = contactToDelete!!,
+            onConfirm = {
+                onDeleteContact(contactToDelete!!)
+                contactToDelete = null
+            },
+            onDismiss = { contactToDelete = null }
+        )
+    }
+
+    optionsContact?.let { target ->
+        ContactOptionsDialog(
+            contact = target,
+            onClearHistory = { onClearChat(target) },
+            onBlockToggle = { onBlockToggle(target) },
+            onDelete = { contactToDelete = target },
+            onDismiss = { optionsContact = null }
         )
     }
 
@@ -289,7 +314,10 @@ fun ContactsScreen(
                         PendingConnectionCard(
                             contact = contact,
                             onClick = { onSelectContact(contact) },
-                            onAccept = { onAcceptContact(contact) },
+                            onAccept = {
+                                onAcceptContact(contact)
+                                onScanQr()
+                            },
                             onIgnore = { pendingContactToIgnore = contact }
                         )
                     }
@@ -315,7 +343,8 @@ fun ContactsScreen(
                         contact = contact,
                         isSelected = contact.uid == selectedContactUid,
                         onClick = { onSelectContact(contact) },
-                        isPrivacyBlurEnabled = isPrivacyBlurEnabled
+                        isPrivacyBlurEnabled = isPrivacyBlurEnabled,
+                        onOptionsClick = { optionsContact = contact }
                     )
                 }
             }
@@ -428,7 +457,7 @@ private fun PendingConnectionCard(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
                 ) {
                     Text(
-                        text = "Accept",
+                        text = "Verify & scan",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
