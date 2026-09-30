@@ -167,7 +167,9 @@ fun HomeChatLayout(
     isPrivacyBlurEnabled: Boolean = true,
     onClearChat: (Contact) -> Unit = {},
     onBlockToggle: (Contact) -> Unit = {},
-    onUnblockContact: () -> Unit = {}
+    onUnblockContact: () -> Unit = {},
+    onMarkRead: () -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {}
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isDualPane = maxWidth >= 600.dp
@@ -212,6 +214,8 @@ fun HomeChatLayout(
                         onScanPeerQr = onScanQr,
                         onAcceptContact = { onAcceptContact(activeContact) },
                         onUnblockContact = onUnblockContact,
+                        onMarkRead = onMarkRead,
+                        onDeleteMessage = onDeleteMessage,
                         onDeclineContact = {
                             onDeleteContact(activeContact)
                             onSelectContact(null)

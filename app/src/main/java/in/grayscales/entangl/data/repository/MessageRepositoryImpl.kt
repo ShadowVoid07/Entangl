@@ -327,6 +327,9 @@ class MessageRepositoryImpl(
             TransportEnvelope.TYPE_MESSAGE -> {
                 val contactEntity = contactDao.getByUid(senderUid)
                 val rawCiphertext = TransportEnvelope.unpadPayload(envelope.ciphertext)
+                // Bilateral TTL: sender's remaining lifetime, signed inside the envelope.
+                // Already-vaporized transmissions are dropped, never stored.
+                val incomingSelfDestructAt = envelope.ttlMs?.let { now + it }
 
                 if (contactEntity != null && contactEntity.isAccepted) {
                     // Established and accepted contact!
@@ -346,10 +349,12 @@ class MessageRepositoryImpl(
                             direction = 0, // INCOMING
                             status = 2,    // DELIVERED
                             timestamp = envelope.timestamp,
-                            selfDestructAt = null
+                            selfDestructAt = incomingSelfDestructAt
                         )
                         messageDao.insertOrUpdate(entity)
-                        notificationManager.showIncomingMessageNotification(senderUid)
+                        if (!notificationManager.isForegroundContact(senderUid)) {
+                            notificationManager.showIncomingMessageNotification(senderUid)
+                        }
 
                         // Send delivery ACK back to sender
                         networkTransport.sendDeliveryAck(envelope.id, senderUid, nodeIdentityManager.localUid)
@@ -362,7 +367,7 @@ class MessageRepositoryImpl(
                             direction = 0, // INCOMING
                             status = 0,    // PENDING
                             timestamp = envelope.timestamp,
-                            selfDestructAt = null
+                            selfDestructAt = incomingSelfDestructAt
                         )
                         messageDao.insertOrUpdate(entity)
                     }
@@ -396,13 +401,19 @@ class MessageRepositoryImpl(
                         )
                         contactDao.insertOrUpdate(pendingContact)
                     }
-                    notificationManager.showIncomingMessageNotification(senderUid)
+                    if (!notificationManager.isForegroundContact(senderUid)) {
+                        notificationManager.showIncomingMessageNotification(senderUid)
+                    }
                 }
             }
         }
     }
 
     override suspend fun send(contactUid: String, plaintext: String) {
+        send(contactUid, plaintext, null)
+    }
+
+    override suspend fun send(contactUid: String, plaintext: String, selfDestructAt: Long?) {
         val id = UUID.randomUUID().toString()
         val timestamp = System.currentTimeMillis()
 
@@ -448,7 +459,7 @@ class MessageRepositoryImpl(
             direction = 1, // OUTGOING
             status = 0,    // PENDING
             timestamp = timestamp,
-            selfDestructAt = null
+            selfDestructAt = selfDestructAt
         )
         messageDao.insertOrUpdate(entity)
 
@@ -469,7 +480,8 @@ class MessageRepositoryImpl(
                 senderOnion = nodeIdentityManager.localOnion,
                 recipientUid = contactUid,
                 ciphertext = TransportEnvelope.padPayload(ciphertext),
-                timestamp = timestamp
+                timestamp = timestamp,
+                ttlMs = selfDestructAt?.let { (it - timestamp).coerceAtLeast(0L) }
             )
 
             // Retry with exponential backoff (3 attempts: 0s, 2s, 4s)
@@ -560,6 +572,12 @@ class MessageRepositoryImpl(
         }
 
         for (msg in pendingOutgoing) {
+            // Vaporized while offline: drop instead of resurrecting dead messages.
+            if (msg.selfDestructAt != null && msg.selfDestructAt <= System.currentTimeMillis()) {
+                messageDao.deleteById(msg.id)
+                decryptedCache.remove(msg.id)
+                continue
+            }
             val envelope = TransportEnvelope(
                 id = msg.id,
                 type = TransportEnvelope.TYPE_MESSAGE,
@@ -568,7 +586,8 @@ class MessageRepositoryImpl(
                 senderOnion = nodeIdentityManager.localOnion,
                 recipientUid = msg.contactUid,
                 ciphertext = TransportEnvelope.padPayload(msg.ciphertext),
-                timestamp = msg.timestamp
+                timestamp = msg.timestamp,
+                ttlMs = msg.selfDestructAt?.let { (it - System.currentTimeMillis()).coerceAtLeast(0L) }
             )
 
             // Attempt one send right away; if it succeeds, mark SENT; if it fails, it will just stay pending for the next network event
@@ -665,6 +684,11 @@ class MessageRepositoryImpl(
     override suspend fun deleteExpired() {
         val now = System.currentTimeMillis()
         messageDao.deleteExpired(now)
+    }
+
+    override suspend fun deleteMessage(messageId: String) {
+        messageDao.deleteById(messageId)
+        decryptedCache.remove(messageId)
     }
 
     override suspend fun clearChat(contactUid: String) {

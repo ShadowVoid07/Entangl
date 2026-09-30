@@ -115,6 +115,7 @@ class ChatViewModel(
 
     fun selectContact(contact: Contact?) {
         _selectedContactUid.value = contact?.uid
+        notificationManager.setForegroundContact(contact?.uid)
         if (contact != null) {
             notificationManager.cancelForContact(contact.uid)
         }
@@ -122,6 +123,7 @@ class ChatViewModel(
 
     fun selectContactByUid(uid: String) {
         _selectedContactUid.value = uid
+        notificationManager.setForegroundContact(uid)
         notificationManager.cancelForContact(uid)
     }
 
@@ -135,13 +137,33 @@ class ChatViewModel(
 
         viewModelScope.launch {
             try {
-                messageRepository.send(contact.uid, plaintext)
+                val selfDestructAt = _selfDestructDuration.value?.let { System.currentTimeMillis() + it }
+                messageRepository.send(contact.uid, plaintext, selfDestructAt)
                 contactRepository.updateLastSeen(contact.uid, System.currentTimeMillis())
             } catch (e: IllegalStateException) {
                 // Mutual gate: chat is locked until both scans + safety confirm.
                 // Never crash from UI send; user stays on locked state with guidance.
                 Log.w("ChatViewModel", "Send blocked (mutual incomplete): ${e.message}")
             }
+        }
+    }
+
+    /** Mark all viewed incoming messages as read (drives unread jump + receipts). */
+    fun markActiveChatRead() {
+        val contact = activeContact.value ?: return
+        viewModelScope.launch {
+            for (message in activeMessages.value) {
+                if (message.direction == Direction.INCOMING && message.status == MessageStatus.DELIVERED) {
+                    messageRepository.markRead(message.id)
+                }
+            }
+        }
+    }
+
+    /** Delete a single vaporized message (TTL countdown completion). */
+    fun deleteMessage(messageId: String) {
+        viewModelScope.launch {
+            messageRepository.deleteMessage(messageId)
         }
     }
 

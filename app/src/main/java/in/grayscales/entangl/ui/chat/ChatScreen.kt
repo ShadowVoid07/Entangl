@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -55,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,6 +69,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.domain.model.Contact
+import `in`.grayscales.entangl.domain.model.Direction
 import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.domain.model.MessageStatus
 import `in`.grayscales.entangl.ui.theme.ColorUtils
@@ -81,6 +84,9 @@ import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Calendar
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -98,6 +104,8 @@ fun ChatScreen(
     onAcceptContact: (() -> Unit)? = null,
     onDeclineContact: (() -> Unit)? = null,
     onUnblockContact: (() -> Unit)? = null,
+    onMarkRead: () -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {},
     isPeerTyping: Boolean = false
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -107,10 +115,36 @@ fun ChatScreen(
     val zeroizingMessageIds = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     val listState = rememberLazyListState()
 
-    // Auto-scroll to latest message on new message or when keyboard opens
+    // WhatsApp-style day grouping: TODAY / YESTERDAY / 12 SEP 2026 dividers.
+    val chatRows = remember(messages) { buildChatRows(messages) }
+
+    // Open at newest unseen: first incoming not yet READ, else bottom. Marks read
+    // after landing so the next open starts at the bottom when fully caught up.
+    var jumpDone by remember(contact.uid) { mutableStateOf(false) }
+    var lastSeenSize by remember(contact.uid) { mutableIntStateOf(0) }
+    LaunchedEffect(chatRows, contact.uid) {
+        if (!jumpDone && chatRows.isNotEmpty()) {
+            jumpDone = true
+            val unreadIdx = chatRows.indexOfFirst {
+                it is ChatRow.Msg &&
+                    it.message.direction == Direction.INCOMING &&
+                    it.message.status != MessageStatus.READ
+            }
+            listState.scrollToItem(if (unreadIdx >= 0) unreadIdx else chatRows.size - 1)
+            lastSeenSize = messages.size
+            onMarkRead()
+        }
+    }
+
+    // Smooth follow: only auto-scroll when new rows arrive after the jump.
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+        if (jumpDone && messages.size > lastSeenSize) {
+            lastSeenSize = messages.size
+            if (chatRows.isNotEmpty()) {
+                listState.animateScrollToItem(chatRows.size - 1)
+            }
+        } else if (!jumpDone) {
+            lastSeenSize = messages.size
         }
     }
 
@@ -130,6 +164,26 @@ fun ChatScreen(
             },
             onDismiss = { showDeleteConfirmDialog = false }
         )
+    }
+
+    // TTL vaporization sweeper: at each message's selfDestructAt, play the glitch
+    // collapse, then delete from the vault. Expired-while-away rows are purged by
+    // EphemeralMessageCleanupWorker; this covers live viewing. One child per message
+    // so a distant timer never blocks an imminent one; restarts are idempotent.
+    LaunchedEffect(messages) {
+        messages
+            .filter { it.selfDestructAt != null && !zeroizingMessageIds.contains(it.id) }
+            .forEach { msg ->
+                launch {
+                    val wait = (msg.selfDestructAt ?: 0L) - System.currentTimeMillis()
+                    if (wait > 0) {
+                        delay(wait)
+                    }
+                    if (!zeroizingMessageIds.contains(msg.id)) {
+                        zeroizingMessageIds.add(msg.id)
+                    }
+                }
+            }
     }
 
     if (showSafetyDialog) {
@@ -259,35 +313,13 @@ fun ChatScreen(
 
                 Column {
                     val displayName = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = displayName,
-                            fontFamily = QuantumMonospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = NeutronWhite
-                        )
-                        val rawColor = contact.profileColor
-                        if (rawColor != null) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(DarkMatterVariant)
-                                    .padding(horizontal = 4.dp, vertical = 1.dp)
-                            ) {
-                                Text(
-                                    text = rawColor,
-                                    fontFamily = QuantumMonospace,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = peerColor
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = displayName,
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = NeutronWhite
+                    )
                     Text(
                         text = statusSubtext,
                         fontFamily = QuantumMonospace,
@@ -573,7 +605,7 @@ fun ChatScreen(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (messages.isEmpty() && !isUnaccepted) {
+            if (chatRows.isEmpty() && !isUnaccepted) {
                 item {
                     EmptyChatBanner(
                         contact = contact,
@@ -584,15 +616,27 @@ fun ChatScreen(
                     )
                 }
             } else {
-                items(messages, key = { it.id }) { message ->
-                    MessageBubble(
-                        message = message,
-                        isZeroizing = zeroizingMessageIds.contains(message.id),
-                        onZeroized = {
-                            zeroizingMessageIds.remove(message.id)
-                        },
-                        onScanPeerQr = onScanPeerQr
-                    )
+                items(chatRows, key = { row ->
+                    when (row) {
+                        is ChatRow.Day -> "day-${row.anchorId}"
+                        is ChatRow.Msg -> row.message.id
+                    }
+                }) { row ->
+                    when (row) {
+                        is ChatRow.Day -> DayDivider(label = row.label)
+                        is ChatRow.Msg -> {
+                            val message = row.message
+                            MessageBubble(
+                                message = message,
+                                isZeroizing = zeroizingMessageIds.contains(message.id),
+                                onZeroized = {
+                                    zeroizingMessageIds.remove(message.id)
+                                    onDeleteMessage(message.id)
+                                },
+                                onScanPeerQr = onScanPeerQr
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1063,6 +1107,111 @@ private fun NetworkInfoRow(label: String, value: String, valueColor: Color = Neu
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             color = valueColor
+        )
+    }
+}
+
+/**
+ * WhatsApp-style day grouping rows for the message stream.
+ * Day headers carry the first message id as a stable anchor for list keys.
+ */
+private sealed interface ChatRow {
+    data class Day(val label: String, val anchorId: String) : ChatRow
+    data class Msg(val message: Message) : ChatRow
+}
+
+private fun buildChatRows(messages: List<Message>): List<ChatRow> {
+    if (messages.isEmpty()) return emptyList()
+    val rows = ArrayList<ChatRow>(messages.size + 2)
+    var lastDayKey = ""
+    for (message in messages) {
+        val dayKey = dayKeyOf(message.timestamp)
+        if (dayKey != lastDayKey) {
+            lastDayKey = dayKey
+            rows.add(ChatRow.Day(label = dayLabelOf(message.timestamp), anchorId = message.id))
+        }
+        rows.add(ChatRow.Msg(message))
+    }
+    return rows
+}
+
+private fun dayKeyOf(timestamp: Long): String {
+    val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+    return "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+}
+
+private fun dayLabelOf(timestamp: Long): String {
+    val now = Calendar.getInstance()
+    val target = Calendar.getInstance().apply { timeInMillis = timestamp }
+    fun sameDay(a: Calendar, b: Calendar): Boolean =
+        a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+            a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+    if (sameDay(now, target)) return "TODAY"
+    now.add(Calendar.DAY_OF_YEAR, -1)
+    if (sameDay(now, target)) return "YESTERDAY"
+    val months = arrayOf(
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+    )
+    val day = target.get(Calendar.DAY_OF_MONTH)
+    val month = months[target.get(Calendar.MONTH)]
+    val year = target.get(Calendar.YEAR)
+    return "$day $month $year"
+}
+
+@Composable
+private fun DayDivider(
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            QuantumCyan.copy(alpha = 0.5f)
+                        )
+                    )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(DarkMatter)
+                .border(1.dp, QuantumCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = label,
+                fontFamily = QuantumMonospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = QuantumCyan
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(
+                            QuantumCyan.copy(alpha = 0.5f),
+                            Color.Transparent
+                        )
+                    )
+                )
         )
     }
 }

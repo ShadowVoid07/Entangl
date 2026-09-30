@@ -32,6 +32,25 @@ class EntanglNotificationManager(
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+    /**
+     * UID of the conversation currently open on screen, if any. While set,
+     * incoming-message notifications for that peer are suppressed (no buzz/shade
+     * spam for a chat the user is already reading) — delivery, storage and ACKs
+     * are unaffected. Wired from ChatViewModel selection state.
+     */
+    @Volatile
+    private var foregroundContactUid: String? = null
+
+    fun setForegroundContact(contactUid: String?) {
+        foregroundContactUid = contactUid?.ifBlank { null }
+        if (contactUid != null) {
+            cancelForContact(contactUid)
+        }
+    }
+
+    fun isForegroundContact(contactUid: String): Boolean =
+        foregroundContactUid != null && foregroundContactUid == contactUid
+
     init {
         createNotificationChannel()
     }

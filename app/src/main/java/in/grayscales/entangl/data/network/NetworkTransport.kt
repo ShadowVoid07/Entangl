@@ -38,19 +38,24 @@ data class TransportEnvelope(
     val timestamp: Long = System.currentTimeMillis(),
     val senderUsername: String = "",
     val senderProfileColor: String = "",
-    val signature: ByteArray = ByteArray(0)
+    val signature: ByteArray = ByteArray(0),
+    /** Ephemeral TTL: remaining milliseconds until vaporization, null = keeps. */
+    val ttlMs: Long? = null
 ) {
     /**
      * Canonical binary representation of envelope data for cryptographic signature verification.
-     * Prevents forgery of headers, sender/recipient IDs, or tampering with the ciphertext.
+     * Prevents forgery of headers, sender/recipient IDs, TTL, or tampering with the ciphertext.
      */
     fun getCanonicalData(): ByteArray {
         val timestampBytes = ByteArray(8) { i -> (timestamp ushr (56 - i * 8)).toByte() }
+        val ttl = ttlMs ?: -1L
+        val ttlBytes = ByteArray(8) { i -> (ttl ushr (56 - i * 8)).toByte() }
         return id.encodeToByteArray() +
             type.encodeToByteArray() +
             senderUid.encodeToByteArray() +
             recipientUid.encodeToByteArray() +
             timestampBytes +
+            ttlBytes +
             ciphertext
     }
 
@@ -114,6 +119,7 @@ data class TransportEnvelope(
                 val sigStr = extractJsonField(jsonStr, "senderSig") ?: ""
                 val sigBytes = if (sigStr.isNotEmpty()) Base64.decode(sigStr) else ByteArray(0)
                 val timestamp = extractJsonLong(jsonStr, "timestamp") ?: System.currentTimeMillis()
+                val ttlMs = extractJsonLong(jsonStr, "ttlMs")
 
                 TransportEnvelope(
                     id = id,
@@ -126,7 +132,8 @@ data class TransportEnvelope(
                     timestamp = timestamp,
                     senderUsername = senderUsername,
                     senderProfileColor = senderProfileColor,
-                    signature = sigBytes
+                    signature = sigBytes,
+                    ttlMs = ttlMs
                 )
             } catch (_: Exception) {
                 null
@@ -261,6 +268,9 @@ data class TransportEnvelope(
             append("\"ciphertext\":\"").append(Base64.encode(ciphertext)).append("\",")
             append("\"senderSig\":\"").append(Base64.encode(signature)).append("\",")
             append("\"timestamp\":").append(timestamp)
+            if (ttlMs != null) {
+                append(",\"ttlMs\":").append(ttlMs)
+            }
             append("}")
         }
     }
@@ -282,6 +292,7 @@ data class TransportEnvelope(
         if (!ciphertext.contentEquals(other.ciphertext)) return false
         if (!signature.contentEquals(other.signature)) return false
         if (timestamp != other.timestamp) return false
+        if (ttlMs != other.ttlMs) return false
 
         return true
     }
@@ -298,6 +309,7 @@ data class TransportEnvelope(
         result = 31 * result + ciphertext.contentHashCode()
         result = 31 * result + signature.contentHashCode()
         result = 31 * result + timestamp.hashCode()
+        result = 31 * result + (ttlMs?.hashCode() ?: 0)
         return result
     }
 }

@@ -15,7 +15,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -53,7 +51,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,7 +73,6 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.abs
 
 /**
  * MessageBubble renders individual chat items with security micro-animations:
@@ -240,7 +236,27 @@ private fun UserMessageBubble(
         isOutgoing -> QuantumCyan.copy(alpha = 0.5f)
         else -> ParticleBorder
     }
-    val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    // Live TTL countdown (ticks each second while armed).
+    var ttlRemainingSec by remember(message.id, message.selfDestructAt) {
+        mutableStateOf(
+            message.selfDestructAt?.let {
+                ((it - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+            }
+        )
+    }
+    LaunchedEffect(message.id, message.selfDestructAt) {
+        val target = message.selfDestructAt ?: return@LaunchedEffect
+        while (true) {
+            val remaining = target - System.currentTimeMillis()
+            if (remaining <= 0) {
+                ttlRemainingSec = 0L
+                return@LaunchedEffect
+            }
+            ttlRemainingSec = remaining / 1000L
+            delay(1000L)
+        }
+    }
     // Plan §4.1: holographic data frame — square-ish panel + neon edge rail.
     val edgeColor = when {
         isZeroizing -> IsotopeMagenta
@@ -321,36 +337,28 @@ private fun UserMessageBubble(
                     )
                 }
 
-                // Metadata per plan §4.1: [SYS.TME: 14:02:45] [EPOCH] [STATUS].
+                // Metadata: time only + live TTL countdown + small status tags.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "[SYS.TME: " + timeFormatter.format(Date(message.timestamp)) + "]",
-                            fontFamily = QuantumMonospace,
-                            fontSize = 11.sp,
-                            color = LunarGray
-                        )
-
-                        // Ratcheted Epoch Badge: Tap for 3D rotationY flip
-                        RatchetedEpochBadge(messageId = message.id, ratchetEpoch = message.ratchetEpoch)
-                    }
+                    Text(
+                        text = timeFormatter.format(Date(message.timestamp)),
+                        fontFamily = QuantumMonospace,
+                        fontSize = 11.sp,
+                        color = LunarGray
+                    )
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        if (message.selfDestructAt != null) {
+                        if (message.selfDestructAt != null && ttlRemainingSec != null) {
                             Text(
-                                text = "[TTL]",
+                                text = "[TTL " + formatTtl(ttlRemainingSec ?: 0L) + "]",
                                 fontFamily = QuantumMonospace,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = IsotopeMagenta
                             )
@@ -362,7 +370,7 @@ private fun UserMessageBubble(
                                     Text(
                                         text = "[SENDING]",
                                         fontFamily = QuantumMonospace,
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = LunarGray
                                     )
                                 }
@@ -370,15 +378,15 @@ private fun UserMessageBubble(
                                     Text(
                                         text = "[SENT]",
                                         fontFamily = QuantumMonospace,
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = LunarGray
                                     )
                                 }
                                 MessageStatus.DELIVERED, MessageStatus.READ -> {
                                     Text(
-                                        text = "[DELVRD]",
+                                        text = "[DELIVERED]",
                                         fontFamily = QuantumMonospace,
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = QuantumCyan
                                     )
@@ -394,93 +402,16 @@ private fun UserMessageBubble(
 }
 
 /**
- * Interactive Ratcheted Epoch Badge with 3D [rotationY] Flip.
- *
- * Face A (Default): Compact lock icon indicating active ratchet encryption.
- * Face B (Flipped): Reveals mock deterministic epoch string (e.g. "EPOCH: 4A9F").
+ * Formats TTL countdown as mm:ss (or hh:mm:ss beyond an hour).
  */
-@Composable
-fun RatchetedEpochBadge(
-    messageId: String,
-    modifier: Modifier = Modifier,
-    ratchetEpoch: Int? = null
-) {
-    val haptic = LocalHapticFeedback.current
-    var isFlipped by remember { mutableStateOf(false) }
-
-    val density = LocalDensity.current.density
-    val rotation by animateFloatAsState(
-        targetValue = if (isFlipped) 180f else 0f,
-        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
-        label = "epochBadge3DFlip"
-    )
-
-    // Compute live Double Ratchet epoch code or fallback to deterministic clean hash
-    val epochCode = remember(messageId, ratchetEpoch) {
-        if (ratchetEpoch != null) {
-            "EPOCH: " + ratchetEpoch.toString(16).uppercase().padStart(4, '0')
-        } else {
-            val cleanHash = abs(messageId.hashCode()).toString(16).uppercase()
-            "EPOCH: " + cleanHash.take(4).padStart(4, '0')
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                rotationY = rotation
-                cameraDistance = 12f * density
-            }
-            .clip(RoundedCornerShape(4.dp))
-            .background(if (isFlipped) QuantumCyan.copy(alpha = 0.15f) else Color.Transparent)
-            .border(
-                0.5.dp,
-                if (isFlipped) QuantumCyan.copy(alpha = 0.6f) else ParticleBorder.copy(alpha = 0.4f),
-                RoundedCornerShape(4.dp)
-            )
-            .clickable {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                isFlipped = !isFlipped
-            }
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (rotation <= 90f) {
-            // Front Face: Cryptographic Lock
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Ratcheted Epoch (Tap to inspect)",
-                    tint = QuantumCyan.copy(alpha = 0.8f),
-                    modifier = Modifier.size(10.dp)
-                )
-            }
-        } else {
-            // Reverse Face: Rotated 180 degrees back so text is upright
-            Row(
-                modifier = Modifier.graphicsLayer { rotationY = 180f },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Security,
-                    contentDescription = null,
-                    tint = QuantumGreen,
-                    modifier = Modifier.size(9.dp)
-                )
-                Text(
-                    text = epochCode,
-                    fontFamily = QuantumMonospace,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = QuantumCyan,
-                    letterSpacing = 0.5.sp
-                )
-            }
-        }
+private fun formatTtl(totalSeconds: Long): String {
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
     }
 }
 

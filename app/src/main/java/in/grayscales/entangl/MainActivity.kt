@@ -497,6 +497,8 @@ class MainActivity : ComponentActivity() {
                                             chatViewModel.setBlocked(contact, false)
                                         }
                                     },
+                                    onMarkRead = { chatViewModel.markActiveChatRead() },
+                                    onDeleteMessage = { id -> chatViewModel.deleteMessage(id) },
                                     onSendMessage = { text -> chatViewModel.sendMessage(text) },
                                     onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
                                     onHandshake = { navigateTo(AppScreen.HANDSHAKE, initialTab = 0) },

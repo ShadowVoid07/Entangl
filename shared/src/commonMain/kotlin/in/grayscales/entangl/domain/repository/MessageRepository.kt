@@ -13,6 +13,9 @@ interface MessageRepository {
     /** Encrypt and persist an outgoing message. */
     suspend fun send(contactUid: String, plaintext: String)
 
+    /** Encrypt and persist an outgoing message with ephemeral self-destruct. */
+    suspend fun send(contactUid: String, plaintext: String, selfDestructAt: Long?)
+
     /** Store a received (already-decrypted) message. */
     suspend fun receiveAndStore(message: Message)
 
@@ -27,6 +30,9 @@ interface MessageRepository {
 
     /** Delete messages that have passed their self-destruct time. */
     suspend fun deleteExpired()
+
+    /** Delete a single message by id (TTL vaporization). */
+    suspend fun deleteMessage(messageId: String)
 
     /** Get count of pending (unsent) messages. */
     suspend fun getPendingCount(): Int

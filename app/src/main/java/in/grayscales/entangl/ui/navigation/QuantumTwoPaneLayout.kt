@@ -34,7 +34,9 @@ fun QuantumTwoPaneLayout(
     isPrivacyBlurEnabled: Boolean = true,
     onClearChat: (Contact) -> Unit = {},
     onBlockToggle: (Contact) -> Unit = {},
-    onUnblockContact: () -> Unit = {}
+    onUnblockContact: () -> Unit = {},
+    onMarkRead: () -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {}
 ) {
     HomeChatLayout(
         contacts = contacts,
@@ -58,6 +60,8 @@ fun QuantumTwoPaneLayout(
         isPrivacyBlurEnabled = isPrivacyBlurEnabled,
         onClearChat = onClearChat,
         onBlockToggle = onBlockToggle,
-        onUnblockContact = onUnblockContact
+        onUnblockContact = onUnblockContact,
+        onMarkRead = onMarkRead,
+        onDeleteMessage = onDeleteMessage
     )
 }
