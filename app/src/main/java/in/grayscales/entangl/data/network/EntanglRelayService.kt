@@ -31,15 +31,21 @@ class EntanglRelayService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("EntanglRelayService", "startForeground failed: ${e.message}")
+            stopSelf()
+            return START_NOT_STICKY
         }
         
         // The NetworkMonitor and NetworkTransport are actually managed via DI and MainActivity lifecycle,
@@ -53,7 +59,11 @@ class EntanglRelayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        networkMonitor.stopMonitoring()
+        try {
+            networkMonitor.stopMonitoring()
+        } catch (e: Exception) {
+            android.util.Log.w("EntanglRelayService", "Error stopping monitor: ${e.message}")
+        }
     }
 
     private fun createNotificationChannel() {

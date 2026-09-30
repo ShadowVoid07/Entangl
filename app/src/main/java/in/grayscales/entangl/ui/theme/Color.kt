@@ -18,5 +18,8 @@ val IsotopeMagenta = Color(0xFFFF003C)
 
 val NeutronWhite = Color(0xFFE0E5EC)
 val SubatomicGray = Color(0xFF6B7280)
+// Higher-contrast secondary text for 11sp+ body copy on DarkMatter (plan §1 clarity).
+// SubatomicGray retained for decorative borders/labels only.
+val LunarGray = Color(0xFF9AA3B2)
 val DeepSpace = Color(0xFF09090F)
 val CyberDark = Color(0xFF0F0F13)

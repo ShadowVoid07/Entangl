@@ -39,6 +39,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,8 +59,6 @@ import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.navigation.QuantumTwoPaneLayout
 import `in`.grayscales.entangl.ui.profile.EditProfileScreen
 import `in`.grayscales.entangl.ui.qr.MutualHandshakeScreen
-import `in`.grayscales.entangl.ui.qr.MyQrScreen
-import `in`.grayscales.entangl.ui.qr.QrScannerView
 import `in`.grayscales.entangl.ui.settings.SettingsScreen
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
@@ -80,10 +80,7 @@ enum class AppScreen {
     MESSAGES,
     HANDSHAKE,
     SETTINGS,
-    DEVICE_TRANSFER,
-    MY_QR,
-    SCAN_QR,
-    DASHBOARD
+    DEVICE_TRANSFER
 }
 
 class MainActivity : ComponentActivity() {
@@ -95,7 +92,7 @@ class MainActivity : ComponentActivity() {
     private val platformSecurity: PlatformSecurity by inject()
     private val keyDestructionService: `in`.grayscales.entangl.core.security.KeyDestructionService by inject()
     private val chatViewModel: ChatViewModel by viewModel()
-    private val currentScreenState = mutableStateOf(AppScreen.MESSAGES)
+    private val pendingNotificationContactUid = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,16 +120,36 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val activeThreats = platformSecurity.checkThreats()
-
         handleIncomingIntent(intent)
 
         // Start background relay service
-        val serviceIntent = Intent(this, EntanglRelayService::class.java)
-        startForegroundService(serviceIntent)
+        try {
+            val serviceIntent = Intent(this, EntanglRelayService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Failed to start EntanglRelayService: ${e.message}")
+        }
 
         setContent {
             EntanglTheme {
+                // Asynchronously check platform threats off the main thread
+                var activeThreats by remember { mutableStateOf<List<SecurityEvent>>(emptyList()) }
+                var showSecurityAdvisory by remember { mutableStateOf(false) }
+
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val threats = platformSecurity.checkThreats()
+                        if (threats.isNotEmpty()) {
+                            activeThreats = threats
+                            showSecurityAdvisory = true
+                        }
+                    }
+                }
+
                 // Request notification permission on Android 13+ (Tiramisu)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val notifLauncher = rememberLauncherForActivityResult(
@@ -158,8 +175,27 @@ class MainActivity : ComponentActivity() {
                 val isIdentityConfigured = isUsernameSet && currentUsername.isNotBlank()
                 val startDestination = if (!isIdentityConfigured) AppScreen.INITIALIZE_IDENTITY else AppScreen.MESSAGES
 
-                var currentScreen by remember(isIdentityConfigured) {
-                    mutableStateOf(if (!isIdentityConfigured) AppScreen.INITIALIZE_IDENTITY else currentScreenState.value)
+                // Navigation backstack maintaining exact back-stack history
+                val screenStack = remember(isIdentityConfigured) {
+                    mutableStateListOf(startDestination)
+                }
+                var handshakeInitialTab by remember { mutableIntStateOf(0) }
+
+                val currentScreen = screenStack.lastOrNull() ?: AppScreen.MESSAGES
+
+                fun navigateTo(screen: AppScreen, initialTab: Int = 0) {
+                    handshakeInitialTab = initialTab
+                    if (screen == AppScreen.INITIALIZE_IDENTITY) {
+                        screenStack.clear()
+                        screenStack.add(AppScreen.INITIALIZE_IDENTITY)
+                    } else if (screen == AppScreen.MESSAGES) {
+                        screenStack.clear()
+                        screenStack.add(AppScreen.MESSAGES)
+                    } else {
+                        if (screenStack.lastOrNull() != screen) {
+                            screenStack.add(screen)
+                        }
+                    }
                 }
 
                 val contacts by chatViewModel.contacts.collectAsState()
@@ -167,7 +203,29 @@ class MainActivity : ComponentActivity() {
                 val activeMessages by chatViewModel.activeMessages.collectAsState()
                 val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
                 var isPrivacyBlurEnabled by remember { mutableStateOf(true) }
-                var showSecurityAdvisory by remember { mutableStateOf(activeThreats.isNotEmpty()) }
+
+                fun navigateBack() {
+                    if (screenStack.size > 1) {
+                        screenStack.removeAt(screenStack.size - 1)
+                    } else {
+                        if (activeContact != null) {
+                            chatViewModel.selectContact(null)
+                        } else {
+                            finish()
+                        }
+                    }
+                }
+
+                // Reactive handler for incoming notification deep-links
+                LaunchedEffect(pendingNotificationContactUid.value) {
+                    val uid = pendingNotificationContactUid.value
+                    if (!uid.isNullOrBlank()) {
+                        screenStack.clear()
+                        screenStack.add(AppScreen.MESSAGES)
+                        chatViewModel.selectContactByUid(uid)
+                        pendingNotificationContactUid.value = null
+                    }
+                }
 
                 // Security Advisory Dialog on startup when host OS threats are active
                 if (showSecurityAdvisory && activeThreats.isNotEmpty()) {
@@ -236,7 +294,7 @@ class MainActivity : ComponentActivity() {
                                     Button(
                                         onClick = {
                                             showSecurityAdvisory = false
-                                            currentScreen = AppScreen.SETTINGS
+                                            navigateTo(AppScreen.SETTINGS)
                                         },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.buttonColors(containerColor = DarkMatterVariant),
@@ -317,7 +375,7 @@ class MainActivity : ComponentActivity() {
                                         Button(
                                             onClick = {
                                                 chatViewModel.dismissReciprocalScanPrompt()
-                                                currentScreen = AppScreen.HANDSHAKE
+                                                navigateTo(AppScreen.HANDSHAKE, initialTab = 1)
                                             },
                                             modifier = Modifier.weight(1.2f),
                                             colors = ButtonDefaults.buttonColors(
@@ -354,18 +412,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Intercept back gesture to return to main messages list (locked out from returning to setup)
-                BackHandler(enabled = currentScreen != AppScreen.MESSAGES && currentScreen != AppScreen.INITIALIZE_IDENTITY) {
-                    currentScreen = AppScreen.MESSAGES
-                }
-
                 // Intercept back gesture during initialization - exit application (cannot bypass setup)
                 BackHandler(enabled = currentScreen == AppScreen.INITIALIZE_IDENTITY) {
                     finish()
                 }
 
+                // Intercept back gesture when deeper in navigation stack
+                BackHandler(enabled = screenStack.size > 1) {
+                    navigateBack()
+                }
+
                 // Intercept back gesture in candybar mode to return to contacts
-                BackHandler(enabled = currentScreen == AppScreen.MESSAGES && activeContact != null) {
+                BackHandler(enabled = screenStack.size <= 1 && currentScreen == AppScreen.MESSAGES && activeContact != null) {
                     chatViewModel.selectContact(null)
                 }
 
@@ -387,8 +445,8 @@ class MainActivity : ComponentActivity() {
                                     initialColorHex = currentProfileColor,
                                     onConfirm = { chosenName, chosenColor ->
                                         chatViewModel.setProfile(chosenName, chosenColor)
-                                        // One-way forward transition: popUpTo root (inclusive = true), navigating permanently to MESSAGES
-                                        currentScreen = AppScreen.MESSAGES
+                                        screenStack.clear()
+                                        screenStack.add(AppScreen.MESSAGES)
                                     }
                                 )
                             }
@@ -404,11 +462,11 @@ class MainActivity : ComponentActivity() {
                                     onAcceptContact = { contact -> chatViewModel.acceptContact(contact) },
                                     onSendMessage = { text -> chatViewModel.sendMessage(text) },
                                     onSetSelfDestruct = { dur -> chatViewModel.setSelfDestructDuration(dur) },
-                                    onHandshake = { currentScreen = AppScreen.HANDSHAKE },
-                                    onOpenSettings = { currentScreen = AppScreen.SETTINGS },
-                                    onScanQr = { currentScreen = AppScreen.HANDSHAKE },
-                                    onShowMyQr = { currentScreen = AppScreen.HANDSHAKE },
-                                    onOpenDashboard = { currentScreen = AppScreen.SETTINGS },
+                                    onHandshake = { navigateTo(AppScreen.HANDSHAKE, initialTab = 0) },
+                                    onOpenSettings = { navigateTo(AppScreen.SETTINGS) },
+                                    onScanQr = { navigateTo(AppScreen.HANDSHAKE, initialTab = 1) },
+                                    onShowMyQr = { navigateTo(AppScreen.HANDSHAKE, initialTab = 0) },
+                                    onOpenDashboard = { navigateTo(AppScreen.SETTINGS) },
                                     localUsername = currentUsername,
                                     localProfileColor = currentProfileColor,
                                     onUpdateProfile = null,
@@ -421,61 +479,40 @@ class MainActivity : ComponentActivity() {
                                     chatViewModel = chatViewModel,
                                     localUsername = currentUsername,
                                     localProfileColor = currentProfileColor,
+                                    initialTab = handshakeInitialTab,
                                     onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
+                                        // MILITARY-GRADE: record outbound scan ONLY, stay on handshake profile
+                                        // for reciprocal scan (B must scan A while on this profile).
+                                        // Do NOT navigate to MESSAGES — chat stays locked until
+                                        // hasScannedPeer && hasBeenScanned && safety confirmed.
                                         chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
-                                        currentScreen = AppScreen.MESSAGES
                                     },
                                     onTransferDetected = { payload ->
                                         chatViewModel.localTransferManager.startImportClient(payload)
-                                        currentScreen = AppScreen.DEVICE_TRANSFER
+                                        navigateTo(AppScreen.DEVICE_TRANSFER)
                                     },
-                                    onBack = { currentScreen = AppScreen.MESSAGES },
-                                    onSettingsClick = { currentScreen = AppScreen.SETTINGS }
+                                    onBack = { navigateBack() },
+                                    onSettingsClick = { navigateTo(AppScreen.SETTINGS) }
                                 )
                             }
 
-                            AppScreen.SETTINGS, AppScreen.DASHBOARD -> {
+                            AppScreen.SETTINGS -> {
                                 SettingsScreen(
                                     threats = activeThreats,
                                     localUsername = currentUsername,
-                                    onBack = { currentScreen = AppScreen.MESSAGES },
-                                    onDeviceTransfer = { currentScreen = AppScreen.DEVICE_TRANSFER },
+                                    localProfileColor = currentProfileColor,
+                                    onBack = { navigateBack() },
+                                    onDeviceTransfer = { navigateTo(AppScreen.DEVICE_TRANSFER) },
                                     isPrivacyBlurEnabled = isPrivacyBlurEnabled,
                                     onTogglePrivacyBlur = { isPrivacyBlurEnabled = it }
-                                )
-                            }
-
-                            AppScreen.MY_QR -> {
-                                MyQrScreen(
-                                    handshakeManager = chatViewModel.handshakeManager,
-                                    localUid = chatViewModel.localUid,
-                                    localOnion = chatViewModel.localOnion,
-                                    localUsername = currentUsername,
-                                    localProfileColor = currentProfileColor,
-                                    onBack = { currentScreen = AppScreen.MESSAGES }
-                                )
-                            }
-
-                            AppScreen.SCAN_QR -> {
-                                QrScannerView(
-                                    handshakeManager = chatViewModel.handshakeManager,
-                                    onPeerConfirmed = { uid, key, onion, safetyNum, peerUsername, peerProfileColor ->
-                                        chatViewModel.addContactFromHandshake(uid, key, onion, safetyNum, peerUsername, peerProfileColor)
-                                        currentScreen = AppScreen.MESSAGES
-                                    },
-                                    onTransferDetected = { payload ->
-                                        chatViewModel.localTransferManager.startImportClient(payload)
-                                        currentScreen = AppScreen.DEVICE_TRANSFER
-                                    },
-                                    onBack = { currentScreen = AppScreen.MESSAGES }
                                 )
                             }
 
                             AppScreen.DEVICE_TRANSFER -> {
                                 DeviceTransferScreen(
                                     chatViewModel = chatViewModel,
-                                    onBack = { currentScreen = AppScreen.MESSAGES },
-                                    onScanQrForImport = { currentScreen = AppScreen.HANDSHAKE }
+                                    onBack = { navigateBack() },
+                                    onScanQrForImport = { navigateTo(AppScreen.HANDSHAKE, initialTab = 1) }
                                 )
                             }
                         }
@@ -494,8 +531,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         val contactUid = intent?.getStringExtra(EXTRA_CONTACT_UID)
         if (!contactUid.isNullOrBlank()) {
-            currentScreenState.value = AppScreen.MESSAGES
-            chatViewModel.selectContactByUid(contactUid)
+            pendingNotificationContactUid.value = contactUid
         }
     }
 }

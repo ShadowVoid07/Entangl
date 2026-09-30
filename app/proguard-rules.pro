@@ -4,11 +4,7 @@
 -keep class net.zetetic.database.sqlcipher.** { *; }
 -dontwarn net.zetetic.database.sqlcipher.**
 
-# 2. LazySodium & JNA Native Bindings
--dontwarn com.goterl.lazysodium.**
--keep class com.goterl.lazysodium.** { *; }
--dontwarn com.sun.jna.**
--keep class com.sun.jna.** { *; }
+# 2. Native Methods
 -keepclasseswithmembernames class * {
     native <methods>;
 }

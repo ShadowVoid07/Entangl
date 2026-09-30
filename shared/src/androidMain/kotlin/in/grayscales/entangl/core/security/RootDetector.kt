@@ -58,6 +58,9 @@ class RootDetector {
         } catch (_: Exception) {
             false
         } finally {
+            try { process?.inputStream?.close() } catch (_: Exception) {}
+            try { process?.errorStream?.close() } catch (_: Exception) {}
+            try { process?.outputStream?.close() } catch (_: Exception) {}
             process?.destroy()
         }
     }

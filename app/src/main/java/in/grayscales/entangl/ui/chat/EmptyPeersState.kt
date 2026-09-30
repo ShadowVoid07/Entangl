@@ -12,7 +12,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,14 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,8 +56,10 @@ import `in`.grayscales.entangl.ui.theme.SubatomicGray
 @Composable
 fun EmptyPeersState(
     modifier: Modifier = Modifier,
-    onHandshake: () -> Unit = {},
-    onShowMyQr: () -> Unit = {}
+    onScanPeer: () -> Unit = {},
+    onShowMyBeacon: () -> Unit = {},
+    onHandshake: () -> Unit = onScanPeer,
+    onShowMyQr: () -> Unit = onShowMyBeacon
 ) {
     val transition = rememberInfiniteTransition(label = "RadarSweepAnimation")
 
@@ -190,7 +189,7 @@ fun EmptyPeersState(
             )
 
             Text(
-                text = "Your zero-knowledge roster is empty.\nInitiate an optical mutual handshake to establish post-quantum encrypted peer sessions.",
+                text = "Your peer roster is empty.\nScan a friend's QR code to establish an encrypted connection.",
                 fontFamily = QuantumMonospace,
                 fontSize = 11.sp,
                 color = SubatomicGray,
@@ -200,58 +199,33 @@ fun EmptyPeersState(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Single Primary Action: SCAN QR
+            Button(
+                onClick = onScanPeer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Button(
-                    onClick = onHandshake,
-                    modifier = Modifier.weight(1.2f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "HANDSHAKE",
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = onShowMyQr,
-                    modifier = Modifier.weight(0.9f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, QuantumCyan),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = QuantumCyan
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCode,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "MY QR",
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "SCAN QR",
+                    fontFamily = QuantumMonospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
     }

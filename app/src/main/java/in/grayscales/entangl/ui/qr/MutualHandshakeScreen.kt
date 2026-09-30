@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,13 +25,19 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,12 +46,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import `in`.grayscales.entangl.domain.model.TransferQrPayload
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
+import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
+import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumGreen
@@ -64,6 +76,7 @@ fun MutualHandshakeScreen(
     localProfileColor: String,
     onPeerConfirmed: (uid: String, key: ByteArray, onion: String, safetyNum: String, peerUsername: String, peerProfileColor: String) -> Unit,
     modifier: Modifier = Modifier,
+    initialTab: Int = 0,
     onTransferDetected: ((TransferQrPayload) -> Unit)? = null,
     onBack: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
@@ -83,7 +96,137 @@ fun MutualHandshakeScreen(
         }
     }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+
+    // Bind local UID for self-scan rejection (military-grade: cannot entangle with self)
+    androidx.compose.runtime.LaunchedEffect(chatViewModel.localUid) {
+        chatViewModel.handshakeManager.localUidHint = chatViewModel.localUid
+    }
+
+    // Real-time peer detection on transmitter side (resolves silent receiver / stranded beacon issue)
+    val contacts by chatViewModel.contacts.collectAsState()
+    val initialUids = remember { contacts.map { it.uid }.toSet() }
+    var dismissedPeerUids by remember { mutableStateOf(setOf<String>()) }
+    val newlyDetectedPeer = contacts.firstOrNull { it.uid !in initialUids && it.uid !in dismissedPeerUids }
+
+    if (newlyDetectedPeer != null) {
+        Dialog(onDismissRequest = {
+            dismissedPeerUids = dismissedPeerUids + newlyDetectedPeer.uid
+        }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, QuantumGreen, RoundedCornerShape(16.dp)),
+                colors = CardDefaults.cardColors(containerColor = DarkMatter)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    val peerColor = ColorUtils.parseColorOrDefault(newlyDetectedPeer.profileColor, QuantumCyan)
+                    val peerName = newlyDetectedPeer.displayName?.ifBlank { null } ?: "Peer ${newlyDetectedPeer.uid.take(6).uppercase()}"
+                    val peerInitials = peerName.take(2).uppercase()
+
+                    // Peer Avatar Pod with actual profile color and initials
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(peerColor.copy(alpha = 0.2f))
+                            .border(2.dp, peerColor, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = peerInitials,
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = peerColor
+                        )
+                    }
+
+                    Text(
+                        text = "PEER SCANNED YOUR BEACON",
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        letterSpacing = 1.sp,
+                        color = QuantumGreen,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "$peerName scanned your QR code and requested connection.\nAccept to verify and chat securely.",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = SubatomicGray,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // MILITARY-GRADE: single action only — force reciprocal optical scan.
+                        // OPEN CHAT bypass removed: chat unlock requires hasScannedPeer && hasBeenScanned
+                        // && explicit safety confirm via confirmMutualHandshake(). Stay on profile.
+                        Button(
+                            onClick = {
+                                chatViewModel.acceptContact(newlyDetectedPeer)
+                                dismissedPeerUids = dismissedPeerUids + newlyDetectedPeer.uid
+                                selectedTab = 1
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = QuantumCyan,
+                                contentColor = CyberDark
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = CyberDark
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "SCAN PEER BACK",
+                                fontFamily = QuantumMonospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                color = CyberDark
+                            )
+                        }
+                    }
+
+                    // Mutual progress ledger (stays on profile until both directions verified)
+                    val youScanned = newlyDetectedPeer.hasScannedPeer
+                    val theyScanned = newlyDetectedPeer.hasBeenScanned
+                    Text(
+                        text = "MUTUAL PROGRESS: YOU SCANNED ${if (youScanned) "✓" else "○"} • " +
+                            "THEY SCANNED ✓ • CHAT ${if (newlyDetectedPeer.isAccepted) "UNLOCKED" else "LOCKED"}",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 9.sp,
+                        color = SubatomicGray,
+                        textAlign = TextAlign.Center
+                    )
+                    if (!youScanned) {
+                        Text(
+                            text = "You must scan their QR while on this profile, then compare 60-digit safety numbers.",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 9.sp,
+                            color = SubatomicGray,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -187,7 +330,7 @@ fun MutualHandshakeScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "TRANSMIT [BEACON]",
+                                    text = "MY QR [BEACON]",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -217,7 +360,7 @@ fun MutualHandshakeScreen(
                             .background(ParticleBorder)
                     )
 
-                    // Right Pane: RECEIVE [SENSOR]
+                    // Right Pane: SCAN QR [SENSOR]
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -244,7 +387,7 @@ fun MutualHandshakeScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "RECEIVE [SENSOR]",
+                                    text = "SCAN QR [SENSOR]",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -281,6 +424,7 @@ fun MutualHandshakeScreen(
                                     localOnion = chatViewModel.localOnion,
                                     localUsername = localUsername,
                                     localProfileColor = localProfileColor,
+                                    onSwitchToScanner = { selectedTab = 1 },
                                     onBack = onBack
                                 )
                             }
@@ -289,11 +433,101 @@ fun MutualHandshakeScreen(
                                     handshakeManager = chatViewModel.handshakeManager,
                                     onPeerConfirmed = onPeerConfirmed,
                                     onTransferDetected = onTransferDetected,
+                                    onSwitchToMyQr = { selectedTab = 0 },
                                     onBack = onBack
                                 )
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Mutual unlock ledger: stays on profile until A scans B AND B scans A AND safety confirmed.
+        // Lists half-complete handshakes with explicit progress and final unlock gate.
+        val mutualPending = contacts.filter { !it.isAccepted && (it.hasScannedPeer || it.hasBeenScanned) }
+        if (mutualPending.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                mutualPending.take(3).forEach { pending ->
+                    MutualPendingCard(
+                        peerName = pending.displayName?.ifBlank { null } ?: "Peer ${pending.uid.take(6).uppercase()}",
+                        peerUid = pending.uid,
+                        youScanned = pending.hasScannedPeer,
+                        theyScanned = pending.hasBeenScanned,
+                        safetyNumber = pending.safetyNumber,
+                        onUnlock = {
+                            // Safety already confirmed in HandshakeConfirmDialog checkbox;
+                            // this final tap enforces both optical directions before session init.
+                            chatViewModel.confirmMutualHandshake(pending.uid, safetyConfirmed = true)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MutualPendingCard(
+    peerName: String,
+    peerUid: String,
+    youScanned: Boolean,
+    theyScanned: Boolean,
+    safetyNumber: String,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val ready = youScanned && theyScanned && !safetyNumber.startsWith("Pending")
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, if (ready) QuantumGreen else QuantumCyan, RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = DarkMatter),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "MUTUAL: $peerName",
+                fontFamily = QuantumMonospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = NeutronWhite
+            )
+            Text(
+                text = "YOU SCANNED ${if (youScanned) "✓" else "○"} • THEY SCANNED ${if (theyScanned) "✓" else "○"}",
+                fontFamily = QuantumMonospace,
+                fontSize = 10.sp,
+                color = SubatomicGray
+            )
+            if (!ready) {
+                Text(
+                    text = if (!youScanned) "Step 1/2: scan their QR on SENSOR tab."
+                    else "Step 2/2: keep your BEACON up for them to scan back, then compare safety numbers.",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 10.sp,
+                    color = SubatomicGray
+                )
+            } else {
+                Button(
+                    onClick = onUnlock,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = QuantumGreen, contentColor = CyberDark),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "VERIFY SAFETY MATCH & UNLOCK CHAT",
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
                 }
             }
         }
@@ -319,7 +553,7 @@ private fun SegmentedHandshakeTabRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // TRANSMIT [BEACON]
+            // MY QR [BEACON]
             val transmitSelected = selectedTab == 0
             Box(
                 modifier = Modifier
@@ -341,7 +575,7 @@ private fun SegmentedHandshakeTabRow(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "TRANSMIT [BEACON]",
+                        text = "MY QR [BEACON]",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
@@ -351,7 +585,7 @@ private fun SegmentedHandshakeTabRow(
                 }
             }
 
-            // RECEIVE [SENSOR]
+            // SCAN QR [SENSOR]
             val receiveSelected = selectedTab == 1
             Box(
                 modifier = Modifier
@@ -373,7 +607,7 @@ private fun SegmentedHandshakeTabRow(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "RECEIVE [SENSOR]",
+                        text = "SCAN QR [SENSOR]",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,

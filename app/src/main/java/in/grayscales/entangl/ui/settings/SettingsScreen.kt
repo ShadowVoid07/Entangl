@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.core.security.SecurityEvent
+import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
@@ -69,6 +70,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     localUsername: String = "",
+    localProfileColor: String = "",
     onDeviceTransfer: () -> Unit = {},
     isPrivacyBlurEnabled: Boolean = true,
     onTogglePrivacyBlur: (Boolean) -> Unit = {}
@@ -133,6 +135,61 @@ fun SettingsScreen(
                         .clip(CircleShape)
                         .background(if (threats.isEmpty()) QuantumGreen else IsotopeMagenta)
                 )
+            }
+        }
+
+        // 0. Local Node Profile Card
+        val profileColor = ColorUtils.parseColorOrDefault(localProfileColor, QuantumCyan)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(DarkMatter)
+                .border(1.dp, profileColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(profileColor.copy(alpha = 0.18f))
+                            .border(1.5.dp, profileColor, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = localUsername.take(2).uppercase().ifBlank { "ME" },
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = profileColor
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = localUsername.ifBlank { "My Node" },
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = NeutronWhite
+                        )
+                        Text(
+                            text = "NODE IDENTITY • VERIFIED IMMUTABLE",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 9.sp,
+                            color = SubatomicGray
+                        )
+                    }
+                }
             }
         }
 

@@ -189,7 +189,20 @@ fun EditProfileScreen(
                     ),
                     shape = RoundedCornerShape(8.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (isFormValid) {
+                            onConfirm(usernameInput.trim(), selectedColorHex)
+                        } else {
+                            focusManager.clearFocus()
+                        }
+                    })
+                )
+
+                Text(
+                    text = if (usernameInput.isBlank()) "Enter 1 to 25 characters to identify yourself to peers" else "Handle will be permanently bound to your device key",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 9.sp,
+                    color = if (usernameInput.isBlank()) SubatomicGray else QuantumCyan.copy(alpha = 0.8f)
                 )
             }
 
@@ -215,7 +228,7 @@ fun EditProfileScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Primary Action: APPLY / SAVE
+            // Primary Action: INITIALIZE IDENTITY
             Button(
                 onClick = {
                     if (isFormValid) {
@@ -242,7 +255,7 @@ fun EditProfileScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "APPLY",
+                    text = "INITIALIZE IDENTITY",
                     fontFamily = QuantumMonospace,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,

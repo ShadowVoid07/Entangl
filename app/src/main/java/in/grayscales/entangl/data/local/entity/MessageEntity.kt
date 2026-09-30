@@ -28,7 +28,8 @@ import `in`.grayscales.entangl.domain.model.MessageStatus
     ],
     indices = [
         Index(value = ["contactUid"]),
-        Index(value = ["timestamp"])
+        Index(value = ["timestamp"]),
+        Index(value = ["selfDestructAt"])
     ]
 )
 data class MessageEntity(

@@ -145,8 +145,7 @@ fun ChatListRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     lastMessage: Message? = null,
-    isPrivacyBlurEnabled: Boolean = true,
-    onLongClick: (() -> Unit)? = null
+    isPrivacyBlurEnabled: Boolean = true
 ) {
     var isHolding by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -182,9 +181,6 @@ fun ChatListRow(
                     },
                     onTap = {
                         onClick()
-                    },
-                    onLongPress = {
-                        onLongClick?.invoke()
                     }
                 )
             }

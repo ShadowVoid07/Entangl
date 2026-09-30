@@ -50,6 +50,11 @@ class DefaultCryptoManager(
             skippedMessageKeys.clear()
         }
     }
+    companion object {
+        /** Maximum number of skipped messages allowed in a ratchet session.
+         *  Prevents CPU/memory exhaustion from crafted sequence numbers. */
+        private const val MAX_SKIP_GAP = 1000
+    }
 
     private val activeSessions = mutableMapOf<String, ByteArray>()
     private val activeRatchetSessions = mutableMapOf<String, SessionRatchetState>()
@@ -130,8 +135,8 @@ class DefaultCryptoManager(
             ratchet.sendSequenceNumber++
             ratchet.ratchetEpoch++
 
-            // 3. Encrypt payload with messageKey bound to contact UID and sequence
-            val aad = (contactUid + ":" + currentSeq).encodeToByteArray()
+            // 3. Encrypt payload with messageKey bound to sequence
+            val aad = ("seq:$currentSeq").encodeToByteArray()
             val innerCiphertext = AeadCipher.encrypt(key = messageKey, plaintext = plaintext, aad = aad)
             messageKey.zeroize()
 
@@ -159,8 +164,7 @@ class DefaultCryptoManager(
                 "Establish a connection via QR handshake before sending messages."
             )
 
-        val aad = contactUid.encodeToByteArray()
-        return AeadCipher.encrypt(key = sessionKey, plaintext = plaintext, aad = aad)
+        return AeadCipher.encrypt(key = sessionKey, plaintext = plaintext, aad = ByteArray(0))
     }
 
     override suspend fun decryptMessage(contactUid: String, ciphertext: ByteArray): ByteArray {
@@ -171,11 +175,17 @@ class DefaultCryptoManager(
                       ((ciphertext[3].toInt() and 0xFF) shl 8) or
                       (ciphertext[4].toInt() and 0xFF)
             val innerCiphertext = ciphertext.copyOfRange(9, ciphertext.size)
-            val aad = (contactUid + ":" + seq).encodeToByteArray()
+            val aad = ("seq:$seq").encodeToByteArray()
 
             val messageKey = if (ratchet.skippedMessageKeys.containsKey(seq)) {
                 ratchet.skippedMessageKeys.remove(seq)!!
             } else {
+                val skipGap = seq - ratchet.recvSequenceNumber
+                if (skipGap > MAX_SKIP_GAP) {
+                    throw IllegalStateException(
+                        "Ratchet skip gap too large ($skipGap > $MAX_SKIP_GAP) for $contactUid — potential DoS"
+                    )
+                }
                 while (ratchet.recvSequenceNumber < seq) {
                     val skippedKey = Hkdf.deriveKey(
                         ikm = ratchet.recvChainKey,
@@ -211,13 +221,21 @@ class DefaultCryptoManager(
             try {
                 return AeadCipher.decrypt(key = messageKey, payload = innerCiphertext, aad = aad)
             } catch (_: Exception) {
-                // If decrypting with derived message key fails, attempt root key fallback
-                val fallbackKey = activeSessions[contactUid] ?: ratchet.rootKey
+                // If decrypting with derived message key and wire sequence AAD fails, attempt fallbacks
+                val legacyAad = (contactUid + ":" + seq).encodeToByteArray()
                 return try {
-                    AeadCipher.decrypt(key = fallbackKey, payload = innerCiphertext, aad = aad)
+                    AeadCipher.decrypt(key = messageKey, payload = innerCiphertext, aad = legacyAad)
                 } catch (_: Exception) {
-                    val fallbackAad = contactUid.encodeToByteArray()
-                    AeadCipher.decrypt(key = fallbackKey, payload = innerCiphertext, aad = fallbackAad)
+                    val fallbackKey = activeSessions[contactUid] ?: ratchet.rootKey
+                    try {
+                        AeadCipher.decrypt(key = fallbackKey, payload = innerCiphertext, aad = aad)
+                    } catch (_: Exception) {
+                        try {
+                            AeadCipher.decrypt(key = fallbackKey, payload = innerCiphertext, aad = legacyAad)
+                        } catch (_: Exception) {
+                            AeadCipher.decrypt(key = fallbackKey, payload = innerCiphertext, aad = ByteArray(0))
+                        }
+                    }
                 }
             } finally {
                 messageKey.zeroize()
@@ -229,8 +247,12 @@ class DefaultCryptoManager(
             ?: sessionKeyPersistence?.loadKey(contactUid)?.also { activeSessions[contactUid] = it }
             ?: throw IllegalStateException("No active session for $contactUid")
 
-        val aad = contactUid.encodeToByteArray()
-        return AeadCipher.decrypt(key = sessionKey, payload = ciphertext, aad = aad)
+        return try {
+            AeadCipher.decrypt(key = sessionKey, payload = ciphertext, aad = ByteArray(0))
+        } catch (_: Exception) {
+            val legacyAad = contactUid.encodeToByteArray()
+            AeadCipher.decrypt(key = sessionKey, payload = ciphertext, aad = legacyAad)
+        }
     }
 
     override fun generateSafetyNumber(localPublicKey: ByteArray, remotePublicKey: ByteArray): String {
@@ -249,8 +271,9 @@ class DefaultCryptoManager(
         sessionKeyPersistence?.deleteKey(contactUid)
     }
 
-    override fun getLocalIdentityPublicKey(): ByteArray? {
-        return localDhPublicKey ?: keyPairGenerator.getStoredIdentityPublicKey()
+    override fun getLocalIdentityPublicKey(): ByteArray {
+        return keyPairGenerator.getStoredIdentityPublicKey()
+            ?: keyPairGenerator.generateIdentityKeyPair()
     }
 
     override fun getSessionRatchetEpoch(contactUid: String): Int? {
@@ -258,25 +281,19 @@ class DefaultCryptoManager(
     }
 
     private fun deriveSharedSecret(peerPublicKey: ByteArray): ByteArray {
-        val dhPriv = getOrInitLocalDhKey()
-        return try {
-            keyPairGenerator.computeX25519KeyAgreement(dhPriv, peerPublicKey)
-        } catch (_: Exception) {
-            // Fallback for non-Curve25519 public keys or unit test mocks
-            val localPub = localDhPublicKey
-                ?: (keyPairGenerator.getStoredIdentityPublicKey() ?: keyPairGenerator.generateIdentityKeyPair())
-            val (first, second) = if (compareLexicographically(localPub, peerPublicKey) <= 0) {
-                localPub to peerPublicKey
-            } else {
-                peerPublicKey to localPub
-            }
-            Hkdf.deriveKey(
-                ikm = first + second,
-                salt = "Entangl-Session-Salt-Fallback".encodeToByteArray(),
-                info = "Entangl-Session-Fallback-Key".encodeToByteArray(),
-                length = 32
-            )
+        val localPub = keyPairGenerator.getStoredIdentityPublicKey()
+            ?: keyPairGenerator.generateIdentityKeyPair()
+        val (first, second) = if (compareLexicographically(localPub, peerPublicKey) <= 0) {
+            localPub to peerPublicKey
+        } else {
+            peerPublicKey to localPub
         }
+        return Hkdf.deriveKey(
+            ikm = first + second,
+            salt = "Entangl-Session-Salt-v3".encodeToByteArray(),
+            info = "Entangl-RootKey-v3".encodeToByteArray(),
+            length = 32
+        )
     }
 
     private fun getOrInitLocalDhKey(): NativeKeyBuffer {

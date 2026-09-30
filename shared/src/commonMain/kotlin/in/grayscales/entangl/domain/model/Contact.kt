@@ -13,7 +13,13 @@ data class Contact(
     val createdAt: Long,
     val lastSeenAt: Long?,
     val isAccepted: Boolean = false,
-    val profileColor: String? = null
+    val profileColor: String? = null,
+    // Military-grade mutual handshake state: both directions must be optically verified.
+    // hasScannedPeer = local user scanned peer QR (outbound). hasBeenScanned = peer
+    // sent SCAN_PING proving they scanned our QR (inbound). isAccepted may only become
+    // true when both are true AND safety number explicitly confirmed out-of-band.
+    val hasScannedPeer: Boolean = false,
+    val hasBeenScanned: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -27,6 +33,8 @@ data class Contact(
         if (lastSeenAt != other.lastSeenAt) return false
         if (isAccepted != other.isAccepted) return false
         if (profileColor != other.profileColor) return false
+        if (hasScannedPeer != other.hasScannedPeer) return false
+        if (hasBeenScanned != other.hasBeenScanned) return false
         return true
     }
 
@@ -40,6 +48,8 @@ data class Contact(
         result = 31 * result + (lastSeenAt?.hashCode() ?: 0)
         result = 31 * result + isAccepted.hashCode()
         result = 31 * result + (profileColor?.hashCode() ?: 0)
+        result = 31 * result + hasScannedPeer.hashCode()
+        result = 31 * result + hasBeenScanned.hashCode()
         return result
     }
 }

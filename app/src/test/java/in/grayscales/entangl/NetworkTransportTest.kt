@@ -126,7 +126,8 @@ class NetworkTransportTest {
     @Test
     fun testMultiRelayPoolConfiguration() {
         val transport = NetworkTransport()
-        assertEquals("https://ntfy.tedomum.fr", transport.activeRelay)
+        assertEquals("https://ntfy.sh", transport.activeRelay)
+        assertTrue(NetworkTransport.RELAY_SERVERS.contains("https://ntfy.sh"))
         assertTrue(NetworkTransport.RELAY_SERVERS.contains("https://ntfy.adminforge.de"))
         assertTrue(NetworkTransport.RELAY_SERVERS.contains("https://ntfy.tedomum.fr"))
         assertTrue(NetworkTransport.RELAY_SERVERS.contains("https://ntfy.envs.net"))

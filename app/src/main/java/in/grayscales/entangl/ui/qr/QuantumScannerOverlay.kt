@@ -27,8 +27,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import `in`.grayscales.entangl.ui.theme.DarkMatter
-import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
@@ -38,16 +36,23 @@ fun QuantumScannerOverlay(
     isTargetLocked: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "scannerLaser")
-    val laserProgress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "laserProgress"
-    )
+    // Battery optimization: Only animate sweeping laser while scanning.
+    // When isTargetLocked is true, freeze animation to avoid continuous 60/120fps Canvas redrawing.
+    val laserProgress = if (!isTargetLocked) {
+        val infiniteTransition = rememberInfiniteTransition(label = "scannerLaser")
+        val progress by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "laserProgress"
+        )
+        progress
+    } else {
+        0f
+    }
 
     val reticleColor = if (isTargetLocked) QuantumGreen else QuantumCyan
 
@@ -98,9 +103,23 @@ fun QuantumScannerOverlay(
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // Draw 4 corner HUD brackets
+            // Draw 4 corner HUD brackets (plan §3: circular rotating HUD + crosshairs)
             val bracketLength = 32.dp.toPx()
             val bracketStroke = 3.5.dp.toPx()
+            val center = Offset((left + right) / 2f, (top + bottom) / 2f)
+            val radius = boxSize * 0.28f
+
+            // Circular reticle
+            drawCircle(
+                color = reticleColor.copy(alpha = 0.9f),
+                radius = radius,
+                center = center,
+                style = Stroke(width = 1.5.dp.toPx())
+            )
+            // Crosshairs through center
+            val hair = 14.dp.toPx()
+            drawLine(reticleColor.copy(alpha = 0.8f), Offset(center.x - hair, center.y), Offset(center.x + hair, center.y), 1.5.dp.toPx(), StrokeCap.Square)
+            drawLine(reticleColor.copy(alpha = 0.8f), Offset(center.x, center.y - hair), Offset(center.x, center.y + hair), 1.5.dp.toPx(), StrokeCap.Square)
 
             // Top-Left
             drawLine(reticleColor, Offset(left, top), Offset(left + bracketLength, top), bracketStroke, StrokeCap.Square)
@@ -118,48 +137,50 @@ fun QuantumScannerOverlay(
             drawLine(reticleColor, Offset(right, bottom), Offset(right - bracketLength, bottom), bracketStroke, StrokeCap.Square)
             drawLine(reticleColor, Offset(right, bottom), Offset(right, bottom - bracketLength), bracketStroke, StrokeCap.Square)
 
-            // Animated sweeping laser
-            val laserY = top + (boxSize * laserProgress)
-            val laserBrush = Brush.horizontalGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    reticleColor.copy(alpha = 0.8f),
-                    reticleColor,
-                    reticleColor.copy(alpha = 0.8f),
-                    Color.Transparent
-                ),
-                startX = left,
-                endX = right
-            )
+            if (!isTargetLocked) {
+                // Animated sweeping laser
+                val laserY = top + (boxSize * laserProgress)
+                val laserBrush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        reticleColor.copy(alpha = 0.8f),
+                        reticleColor,
+                        reticleColor.copy(alpha = 0.8f),
+                        Color.Transparent
+                    ),
+                    startX = left,
+                    endX = right
+                )
 
-            drawLine(
-                brush = laserBrush,
-                start = Offset(left, laserY),
-                end = Offset(right, laserY),
-                strokeWidth = 2.5.dp.toPx()
-            )
+                drawLine(
+                    brush = laserBrush,
+                    start = Offset(left, laserY),
+                    end = Offset(right, laserY),
+                    strokeWidth = 2.5.dp.toPx()
+                )
 
-            // Subtle glow aura behind laser
-            val auraBrush = Brush.verticalGradient(
-                colors = listOf(
-                    reticleColor.copy(alpha = 0.2f),
-                    Color.Transparent
-                ),
-                startY = laserY - 14.dp.toPx(),
-                endY = laserY + 14.dp.toPx()
-            )
-            drawRect(
-                brush = auraBrush,
-                topLeft = Offset(left, laserY - 14.dp.toPx()),
-                size = Size(boxSize, 28.dp.toPx())
-            )
+                // Subtle glow aura behind laser
+                val auraBrush = Brush.verticalGradient(
+                    colors = listOf(
+                        reticleColor.copy(alpha = 0.2f),
+                        Color.Transparent
+                    ),
+                    startY = laserY - 14.dp.toPx(),
+                    endY = laserY + 14.dp.toPx()
+                )
+                drawRect(
+                    brush = auraBrush,
+                    topLeft = Offset(left, laserY - 14.dp.toPx()),
+                    size = Size(boxSize, 28.dp.toPx())
+                )
+            }
         }
 
         // HUD Text Header and Footer
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp),
+                .padding(bottom = 76.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(

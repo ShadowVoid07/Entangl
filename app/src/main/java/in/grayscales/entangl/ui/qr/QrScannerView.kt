@@ -18,21 +18,25 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,7 +55,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -87,10 +93,12 @@ fun QrScannerView(
     onPeerConfirmed: (peerUid: String, peerPublicKey: ByteArray, peerOnion: String, safetyNumber: String, peerUsername: String, peerProfileColor: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onTransferDetected: ((TransferQrPayload) -> Unit)? = null
+    onTransferDetected: ((TransferQrPayload) -> Unit)? = null,
+    onSwitchToMyQr: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val haptic = LocalHapticFeedback.current
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -114,6 +122,13 @@ fun QrScannerView(
     var scannedTransferPayload by remember { mutableStateOf<TransferQrPayload?>(null) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val barcodeScanner = remember {
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+        )
+    }
 
     // Fetch CameraProvider once
     LaunchedEffect(Unit) {
@@ -127,6 +142,7 @@ fun QrScannerView(
         onDispose {
             cameraExecutor.shutdown()
             cameraProvider?.unbindAll()
+            try { barcodeScanner.close() } catch (_: Exception) {}
         }
     }
 
@@ -243,12 +259,6 @@ fun QrScannerView(
                 it.surfaceProvider = pView.surfaceProvider
             }
 
-        val barcodeScanner = BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                .build()
-        )
-
         val imageAnalysis = ImageAnalysis.Builder()
             .setResolutionSelector(resolutionSelector)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -269,6 +279,7 @@ fun QrScannerView(
                 if (transfer != null) {
                     mainExecutor.execute {
                         if (scannedTransferPayload == null) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             isTargetLocked = true
                             scannedTransferPayload = transfer
                         }
@@ -280,6 +291,7 @@ fun QrScannerView(
                     val payload = HandshakePayload.fromQrString(zxingText)
                     mainExecutor.execute {
                         if (scannedPayload == null) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             isTargetLocked = true
                             scannedPayload = payload
                         }
@@ -303,12 +315,14 @@ fun QrScannerView(
                             if (!rawText.isNullOrBlank()) {
                                 val transfer = TransferQrPayload.fromQrString(rawText)
                                 if (transfer != null) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     isTargetLocked = true
                                     scannedTransferPayload = transfer
                                     break
                                 }
                                 try {
                                     val payload = HandshakePayload.fromQrString(rawText)
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     isTargetLocked = true
                                     scannedPayload = payload
                                     break
@@ -422,6 +436,41 @@ fun QrScannerView(
                         imageVector = Icons.Default.Cameraswitch,
                         contentDescription = "Switch Camera",
                         tint = QuantumCyan
+                    )
+                }
+            }
+        }
+
+        // Bottom Quick Switcher: "SHOW MY QR INSTEAD" (resolves mutual camera impasse)
+        if (onSwitchToMyQr != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 20.dp)
+            ) {
+                Button(
+                    onClick = onSwitchToMyQr,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DarkMatter.copy(alpha = 0.90f),
+                        contentColor = QuantumCyan
+                    ),
+                    border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCode,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = QuantumCyan
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "SHOW MY QR INSTEAD",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = QuantumCyan
                     )
                 }
             }

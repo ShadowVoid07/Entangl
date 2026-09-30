@@ -24,10 +24,11 @@ class NetworkMonitor(
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             super.onAvailable(network)
-            Log.i("NetworkMonitor", "Network is available, restarting transport listeners and retrying messages")
+            Log.i("NetworkMonitor", "Network is available (callback)")
             val localUid = nodeIdentityManager.localUid
-            if (localUid.isNotBlank()) {
-                networkTransport.restartListening(localUid)
+            if (localUid.isNotBlank() && !networkTransport.isRunning) {
+                Log.i("NetworkMonitor", "Network transport is idle; starting listener for $localUid")
+                networkTransport.startListening(localUid)
             }
             scope.launch {
                 try {

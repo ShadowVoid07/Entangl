@@ -56,6 +56,10 @@ class LocalTransferManager(
     private val networkTransport: NetworkTransport,
     private val keyDestructionService: KeyDestructionService
 ) {
+    companion object {
+        /** Maximum allowed transfer payload size (50 MB) to prevent OOM from malicious length fields */
+        private const val MAX_TRANSFER_PAYLOAD_BYTES = 50 * 1024 * 1024
+    }
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private var serverJob: Job? = null
@@ -99,9 +103,10 @@ class LocalTransferManager(
                 val socket = serverSocket.accept()
                 _progress.value = TransferProgress.Transferring("Peer connected! Performing cryptographic handshake...")
 
-                socket.soTimeout = 30000
-                DataInputStream(socket.getInputStream()).use { dis ->
-                    DataOutputStream(socket.getOutputStream()).use { dos ->
+                socket.use { sock ->
+                    sock.soTimeout = 30000
+                    DataInputStream(sock.getInputStream()).use { dis ->
+                        DataOutputStream(sock.getOutputStream()).use { dos ->
                         // 1. Verify authToken
                         val clientAuthToken = dis.readUTF()
                         if (clientAuthToken != authToken) {
@@ -223,6 +228,7 @@ class LocalTransferManager(
                         )
                     }
                 }
+            }
             } catch (e: Exception) {
                 Log.e("LocalTransferManager", "Export failed: ${e.message}", e)
                 _progress.value = TransferProgress.Failed("Transfer failed: ${e.message}")
@@ -243,10 +249,11 @@ class LocalTransferManager(
 
             try {
                 val socket = Socket(qrPayload.ip, qrPayload.port)
-                socket.soTimeout = 45000
+                socket.use { sock ->
+                    sock.soTimeout = 45000
 
-                DataOutputStream(socket.getOutputStream()).use { dos ->
-                    DataInputStream(socket.getInputStream()).use { dis ->
+                    DataOutputStream(sock.getOutputStream()).use { dos ->
+                        DataInputStream(sock.getInputStream()).use { dis ->
                         // 1. Send Auth Token
                         dos.writeUTF(qrPayload.authToken)
 
@@ -276,6 +283,9 @@ class LocalTransferManager(
 
                         // 4. Read length-prefixed encrypted payload
                         val encryptedLen = dis.readInt()
+                        if (encryptedLen <= 0 || encryptedLen > MAX_TRANSFER_PAYLOAD_BYTES) {
+                            throw SecurityException("Transfer payload size ($encryptedLen bytes) exceeds maximum allowed (${MAX_TRANSFER_PAYLOAD_BYTES} bytes)")
+                        }
                         val encryptedBytes = ByteArray(encryptedLen).also { dis.readFully(it) }
 
                         _progress.value = TransferProgress.Transferring("Decrypting and verifying payload integrity...")
@@ -343,6 +353,7 @@ class LocalTransferManager(
                         )
                     }
                 }
+            }
             } catch (e: Exception) {
                 Log.e("LocalTransferManager", "Import failed: ${e.message}", e)
                 _progress.value = TransferProgress.Failed("Import failed: ${e.message}")

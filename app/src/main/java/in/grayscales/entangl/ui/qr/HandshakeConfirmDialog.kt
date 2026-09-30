@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -48,8 +47,6 @@ import `in`.grayscales.entangl.core.crypto.HandshakeVerificationResult
 import `in`.grayscales.entangl.core.util.toHex
 import `in`.grayscales.entangl.domain.model.HandshakePayload
 import `in`.grayscales.entangl.ui.theme.ColorUtils
-import `in`.grayscales.entangl.ui.theme.CyberDark
-import kotlinx.coroutines.delay
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -59,6 +56,7 @@ import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
+import kotlinx.coroutines.delay
 
 @Composable
 fun HandshakeConfirmDialog(
@@ -220,11 +218,40 @@ fun HandshakeConfirmDialog(
                                 safetyNumber = verificationResult.safetyNumber
                             )
                             Text(
-                                text = "Confirm that the 60-digit number above matches your peer's screen.",
+                                text = "Call out or show this number to your peer while on this profile. " +
+                                    "Both screens must match exactly — this is your MITM proof. " +
+                                    "Chat unlocks only after A scans B AND B scans A AND both confirm match.",
                                 fontFamily = QuantumMonospace,
                                 fontSize = 9.sp,
                                 color = SubatomicGray,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                lineHeight = 13.sp
+                            )
+                        }
+
+                        // Military-grade explicit safety confirmation gate
+                        var safetyMatchConfirmed by remember { mutableStateOf(false) }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(DarkMatterVariant)
+                                .border(1.dp, ParticleBorder, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            androidx.compose.material3.Checkbox(
+                                checked = safetyMatchConfirmed,
+                                onCheckedChange = { safetyMatchConfirmed = it }
+                            )
+                            Text(
+                                text = "Peer safety number matches on their screen (verified face-to-face)",
+                                fontFamily = QuantumMonospace,
+                                fontSize = 10.sp,
+                                color = NeutronWhite,
+                                lineHeight = 14.sp,
+                                modifier = Modifier.weight(1f)
                             )
                         }
 
@@ -235,10 +262,13 @@ fun HandshakeConfirmDialog(
                         ) {
                             Button(
                                 onClick = { onConfirm(verificationResult) },
+                                enabled = safetyMatchConfirmed,
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    disabledContainerColor = DarkMatterVariant,
+                                    disabledContentColor = SubatomicGray
                                 ),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
@@ -246,15 +276,15 @@ fun HandshakeConfirmDialog(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimary
+                                    tint = if (safetyMatchConfirmed) MaterialTheme.colorScheme.onPrimary else SubatomicGray
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "ESTABLISH ENTANGLEMENT",
+                                    text = if (safetyMatchConfirmed) "RECORD SCAN & AWAIT RECIPROCAL" else "CONFIRM SAFETY MATCH TO CONTINUE",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onPrimary
+                                    color = if (safetyMatchConfirmed) MaterialTheme.colorScheme.onPrimary else SubatomicGray
                                 )
                             }
 
@@ -396,7 +426,8 @@ fun ScrambleMatrixText(
     var displayedChunks by remember { mutableStateOf(targetChunks) }
 
     LaunchedEffect(safetyNumber) {
-        val charset = "0123456789ABCDEF"
+        // Plan §3: safety is 60 digits — scramble with digits only (no hex letters).
+        val charset = "0123456789"
         val startTime = System.currentTimeMillis()
         val durationMs = 500L
         val throttleMs = 60L

@@ -34,7 +34,7 @@ class KeyDestructionService(
             for (alias in aliases) {
                 if (alias.startsWith("entangl_")) {
                     keyStore.deleteEntry(alias)
-                    Log.i("KeyDestructionService", "Zeroized Keystore alias: $alias")
+                    Log.d("KeyDestructionService", "Zeroized Keystore alias: $alias")
                 }
             }
         } catch (e: Exception) {
@@ -50,7 +50,7 @@ class KeyDestructionService(
             context.deleteDatabase("entangl.db")
             context.deleteDatabase("entangl.db-wal")
             context.deleteDatabase("entangl.db-shm")
-            Log.i("KeyDestructionService", "Permanently deleted SQLCipher database files")
+            Log.d("KeyDestructionService", "Permanently deleted SQLCipher database files")
         } catch (e: Exception) {
             Log.e("KeyDestructionService", "Error deleting databases: ${e.message}")
             success = false
@@ -59,6 +59,7 @@ class KeyDestructionService(
         // 4. Wipe SharedPreferences
         val prefsToClear = listOf(
             "entangl_node_identity",
+            "entangl_node_identity_encrypted",
             "entangl_db_meta",
             "entangl_session_keys_encrypted",
             "entangl_ratchet_hmacs"
@@ -66,7 +67,7 @@ class KeyDestructionService(
         for (prefName in prefsToClear) {
             try {
                 context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit { clear() }
-                Log.i("KeyDestructionService", "Wiped SharedPreferences: $prefName")
+                Log.d("KeyDestructionService", "Wiped SharedPreferences: $prefName")
             } catch (e: Exception) {
                 Log.e("KeyDestructionService", "Error clearing pref $prefName: ${e.message}")
             }

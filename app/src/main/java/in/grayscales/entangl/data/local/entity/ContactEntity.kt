@@ -15,7 +15,9 @@ data class ContactEntity(
     val createdAt: Long,
     val lastSeenAt: Long?,
     val isAccepted: Boolean = false,
-    val profileColor: String? = null
+    val profileColor: String? = null,
+    val hasScannedPeer: Boolean = false,
+    val hasBeenScanned: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -29,6 +31,8 @@ data class ContactEntity(
         if (lastSeenAt != other.lastSeenAt) return false
         if (isAccepted != other.isAccepted) return false
         if (profileColor != other.profileColor) return false
+        if (hasScannedPeer != other.hasScannedPeer) return false
+        if (hasBeenScanned != other.hasBeenScanned) return false
         return true
     }
 
@@ -42,6 +46,8 @@ data class ContactEntity(
         result = 31 * result + (lastSeenAt?.hashCode() ?: 0)
         result = 31 * result + isAccepted.hashCode()
         result = 31 * result + (profileColor?.hashCode() ?: 0)
+        result = 31 * result + hasScannedPeer.hashCode()
+        result = 31 * result + hasBeenScanned.hashCode()
         return result
     }
 
@@ -55,7 +61,9 @@ data class ContactEntity(
             createdAt = createdAt,
             lastSeenAt = lastSeenAt,
             isAccepted = isAccepted,
-            profileColor = profileColor
+            profileColor = profileColor,
+            hasScannedPeer = hasScannedPeer,
+            hasBeenScanned = hasBeenScanned
         )
     }
 
@@ -70,7 +78,9 @@ data class ContactEntity(
                 createdAt = contact.createdAt,
                 lastSeenAt = contact.lastSeenAt,
                 isAccepted = contact.isAccepted,
-                profileColor = contact.profileColor
+                profileColor = contact.profileColor,
+                hasScannedPeer = contact.hasScannedPeer,
+                hasBeenScanned = contact.hasBeenScanned
             )
         }
     }

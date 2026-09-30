@@ -24,7 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -54,12 +56,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.core.crypto.HandshakeManager
 import `in`.grayscales.entangl.core.util.toHex
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
+import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
@@ -74,7 +78,8 @@ fun MyQrScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
     localUsername: String = "",
-    localProfileColor: String = ""
+    localProfileColor: String = "",
+    onSwitchToScanner: (() -> Unit)? = null
 ) {
     var payload by remember {
         mutableStateOf(handshakeManager.generateInitiatorPayload(localUid, localOnion, localUsername, localProfileColor))
@@ -128,10 +133,10 @@ fun MyQrScreen(
         // Top Bar - Cleaned of redundant back arrow
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                text = "QUANTUM UPLINK BEACON",
+                text = "MY BEACON QR",
                 fontFamily = QuantumMonospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
@@ -139,10 +144,10 @@ fun MyQrScreen(
                 color = QuantumCyan
             )
             Text(
-                text = "STAGE 1: INITIATE PHYSICAL HANDSHAKE",
+                text = "Hold this screen out for your peer to scan with their camera.",
                 fontFamily = QuantumMonospace,
-                fontSize = 10.sp,
-                color = SubatomicGray
+                fontSize = 11.sp,
+                color = NeutronWhite
             )
         }
 
@@ -316,10 +321,50 @@ fun MyQrScreen(
                         color = timerColor
                     )
                 }
+
+                // Reassuring forward-secrecy micro-copy
+                Text(
+                    text = "⏳ Nonce auto-renews every 60s for forward secrecy — take your time.",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 10.sp,
+                    color = SubatomicGray,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 14.sp
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Switch to Camera Scanner button if switcher callback is provided
+        if (onSwitchToScanner != null) {
+            Button(
+                onClick = onSwitchToScanner,
+                modifier = Modifier.fillMaxWidth(0.92f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = QuantumGreen,
+                    contentColor = CyberDark
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = CyberDark
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "SCAN PEER'S QR INSTEAD",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = CyberDark
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+        }
 
         // Regenerate Button
         OutlinedButton(

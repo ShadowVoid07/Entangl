@@ -166,11 +166,11 @@ class CryptoAndNetworkSecurityTest {
     }
 
     @Test
-    fun testFixed4KbPayloadPaddingAndUnpadding() {
+    fun testFixed2KbPayloadPaddingAndUnpadding() {
         val rawMessage = "Quantum secure zero-knowledge payload".encodeToByteArray()
         val padded = TransportEnvelope.padPayload(rawMessage)
 
-        assertEquals("Padded payload must be exactly 4096 bytes", 4096, padded.size)
+        assertEquals("Padded payload must be exactly 2048 bytes for relay transport", 2048, padded.size)
 
         val unpadded = TransportEnvelope.unpadPayload(padded)
         assertArrayEquals("Unpadded payload must match original bytes", rawMessage, unpadded)
@@ -413,5 +413,140 @@ class CryptoAndNetworkSecurityTest {
         assertEquals("peer-alice", restored.sessionKeys[0].contactUid)
         assertNotNull(restored.certificate)
         assertTrue(SuccessionCertificate.verify(restored.certificate!!, kpg))
+    }
+
+    @Test
+    fun testCryptoManagerIdentityPublicKeyMatchesKeystoreAndVerifiesEnvelope() = runBlocking {
+        val kpg = KeyPairGenerator()
+        val expectedIdentityPub = kpg.getStoredIdentityPublicKey() ?: kpg.generateIdentityKeyPair()
+
+        val cryptoManager = DefaultCryptoManager(
+            keyPairGenerator = kpg,
+            ratchetStateVerifier = dummyRatchetVerifier
+        )
+
+        // Initialize session with a peer (which sets up local DH keys)
+        val peerPub = ByteArray(32) { 0x33 }
+        cryptoManager.initializeSession("peer-alice", peerPub, "alice.onion")
+
+        // getLocalIdentityPublicKey must return the Keystore Identity Key, NOT the ephemeral DH key
+        val identityPub = cryptoManager.getLocalIdentityPublicKey()
+        assertNotNull(identityPub)
+        assertArrayEquals("Identity pub key must match Keystore identity key", expectedIdentityPub, identityPub)
+
+        // Test envelope signing with this identity pub key
+        val transport = NetworkTransport(kpg)
+        val envelope = TransportEnvelope(
+            id = "msg-auth-1",
+            type = TransportEnvelope.TYPE_MESSAGE,
+            senderUid = "node-local",
+            senderIdentityPub = identityPub!!,
+            senderOnion = "local.onion",
+            recipientUid = "peer-alice",
+            ciphertext = "hello world".encodeToByteArray()
+        )
+
+        val signed = transport.signEnvelope(envelope)
+        assertTrue(signed.signature.isNotEmpty())
+        assertArrayEquals(expectedIdentityPub, signed.senderIdentityPub)
+
+        val isValid = kpg.verify(
+            publicKey = signed.senderIdentityPub,
+            data = signed.getCanonicalData(),
+            signature = signed.signature
+        )
+        assertTrue("Signature verification must succeed when using identity pub from cryptoManager", isValid)
+    }
+
+    @Test
+    fun testDirectMessageEnvelopeSizeWithinNtfyCeiling() {
+        val kpg = KeyPairGenerator()
+        val transport = NetworkTransport(kpg)
+
+        val plaintext = "Hello! Direct message without physical scanning.".encodeToByteArray()
+        val paddedCiphertext = TransportEnvelope.padPayload(plaintext, 2048)
+
+        val envelope = TransportEnvelope(
+            id = "msg-direct-100",
+            type = TransportEnvelope.TYPE_MESSAGE,
+            senderUid = "node-alice-direct",
+            senderUsername = "Alice",
+            senderProfileColor = "#00F0FF",
+            senderIdentityPub = kpg.generateIdentityKeyPair(),
+            senderOnion = "alice777777777777777777777777777777777777777777777777777.onion",
+            recipientUid = "node-bob-direct",
+            ciphertext = paddedCiphertext,
+            timestamp = System.currentTimeMillis()
+        )
+
+        val signed = transport.signEnvelope(envelope)
+        val json = signed.toJson()
+
+        // Ntfy's hard limit is 4095 characters. The envelope must fit with margin to spare.
+        assertTrue("Envelope JSON length (${json.length}) must be <= 4000 characters for ntfy relay", json.length <= 4000)
+
+        // Deserialization must successfully recreate the envelope and unpad the payload
+        val deserialized = TransportEnvelope.fromJson(json)
+        assertNotNull(deserialized)
+        assertEquals("msg-direct-100", deserialized!!.id)
+        assertEquals(TransportEnvelope.TYPE_MESSAGE, deserialized.type)
+        assertEquals("node-bob-direct", deserialized.recipientUid)
+
+        val unpadded = TransportEnvelope.unpadPayload(deserialized.ciphertext)
+        assertArrayEquals(plaintext, unpadded)
+
+        // Signature verification must pass
+        val sigValid = kpg.verify(
+            publicKey = deserialized.senderIdentityPub,
+            data = deserialized.getCanonicalData(),
+            signature = deserialized.signature
+        )
+        assertTrue("Signature must be valid on deserialized envelope", sigValid)
+    }
+
+    @Test
+    fun testTwoEndedMutualSessionEncryptionAndDecryption() = runBlocking {
+        val aliceKpg = KeyPairGenerator()
+        val bobKpg = KeyPairGenerator()
+
+        val aliceCrypto = DefaultCryptoManager(aliceKpg, dummyRatchetVerifier)
+        val bobCrypto = DefaultCryptoManager(bobKpg, dummyRatchetVerifier)
+
+        val alicePub = aliceCrypto.getLocalIdentityPublicKey()!!
+        val bobPub = bobCrypto.getLocalIdentityPublicKey()!!
+
+        val aliceUid = "alice-node-uid"
+        val bobUid = "bob-node-uid"
+
+        // 1. Alice scans Bob's QR code first
+        aliceCrypto.initializeSession(bobUid, bobPub, "bob.onion")
+
+        // 2. Alice sends an encrypted message to Bob
+        val secretMessage = "Hello Bob! Transmitted after QR scan."
+        val ciphertextFromAlice = aliceCrypto.encryptMessage(bobUid, secretMessage.encodeToByteArray())
+        assertNotNull(ciphertextFromAlice)
+
+        // 3. Before Bob has scanned Alice's QR code, Bob cannot decrypt the message
+        try {
+            bobCrypto.decryptMessage(aliceUid, ciphertextFromAlice)
+            fail("Bob should not be able to decrypt before scanning Alice's QR code / initializing session")
+        } catch (_: Exception) {
+            // Expected: shows as "Encrypted message" in the UI
+        }
+
+        // 4. Bob scans Alice's QR code (from Bob's end)
+        bobCrypto.initializeSession(aliceUid, alicePub, "alice.onion")
+
+        // 5. Now Bob decrypts the pending message
+        val decryptedByBob = bobCrypto.decryptMessage(aliceUid, ciphertextFromAlice)
+        assertEquals(secretMessage, decryptedByBob.decodeToString())
+
+        // 6. Bob replies to Alice
+        val replyMessage = "Hello Alice! Scanned your QR and decrypted successfully."
+        val ciphertextFromBob = bobCrypto.encryptMessage(aliceUid, replyMessage.encodeToByteArray())
+
+        // 7. Alice decrypts Bob's reply
+        val decryptedByAlice = aliceCrypto.decryptMessage(bobUid, ciphertextFromBob)
+        assertEquals(replyMessage, decryptedByAlice.decodeToString())
     }
 }

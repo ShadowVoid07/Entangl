@@ -2,6 +2,7 @@ package `in`.grayscales.entangl.core.security
 
 import android.content.Context
 import android.util.Log
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -41,9 +42,18 @@ class EphemeralMessageCleanupWorker(
         private const val WORK_NAME = "entangl_ephemeral_cleanup_work"
 
         fun schedule(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .build()
+
+            // 15-minute repeat with 5-minute flex interval allows the system to coalesce
+            // this job with other alarms/maintenance windows during Android Doze mode, preventing wakeups.
             val cleanupRequest = PeriodicWorkRequestBuilder<EphemeralMessageCleanupWorker>(
-                15, TimeUnit.MINUTES
-            ).build()
+                15, TimeUnit.MINUTES,
+                5, TimeUnit.MINUTES
+            )
+                .setConstraints(constraints)
+                .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,

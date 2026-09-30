@@ -166,4 +166,62 @@ class HandshakeManagerTest {
         val result = handshakeManagerB.verifyPeerPayload(futurePayload)
         assertTrue("Future timestamp payload must return Expired result", result is HandshakeVerificationResult.Expired)
     }
+
+    @Test
+    fun testConfirmWithoutInitiateRejected() {
+        val confirm = handshakeManagerB.generateConfirmPayload(
+            localUid = "node-beta-2",
+            localOnion = "beta.onion",
+            peerNonce = ByteArray(32) { 7 },
+            username = "Bob",
+            profileColor = "#00F0FF"
+        )
+        // handshakeManagerA never displayed INITIATE, so CONFIRM must be rejected as unbound.
+        val result = handshakeManagerA.verifyPeerPayload(confirm)
+        assertTrue(
+            "CONFIRM without prior INITIATE must be Error, got $result",
+            result is HandshakeVerificationResult.Error
+        )
+    }
+
+    @Test
+    fun testConfirmNonceMismatchRejected() {
+        // A displays INITIATE (nonce_A stored).
+        handshakeManagerA.generateInitiatorPayload("node-a", "a.onion")
+        val forgedConfirm = handshakeManagerB.generateConfirmPayload(
+            localUid = "node-b",
+            localOnion = "b.onion",
+            peerNonce = ByteArray(32) { 9 }, // not nonce_A
+            username = "Bob",
+            profileColor = "#00F0FF"
+        )
+        val result = handshakeManagerA.verifyPeerPayload(forgedConfirm)
+        assertTrue("Mismatched CONFIRM nonce must be Error, got $result", result is HandshakeVerificationResult.Error)
+    }
+
+    @Test
+    fun testNonceReplayRejected() {
+        val payload = handshakeManagerA.generateInitiatorPayload(
+            localUid = "node-alpha-1",
+            localOnion = "alpha.onion"
+        )
+        val first = handshakeManagerB.verifyPeerPayload(payload)
+        assertTrue("First scan must succeed, got $first", first is HandshakeVerificationResult.Success)
+        val second = handshakeManagerB.verifyPeerPayload(payload)
+        assertTrue("Screenshot replay must be Error, got $second", second is HandshakeVerificationResult.Error)
+    }
+
+    @Test
+    fun testStructuralValidationRejected() {
+        val base = handshakeManagerA.generateInitiatorPayload(
+            localUid = "node-alpha-1",
+            localOnion = "alpha.onion"
+        )
+        val badVersion = handshakeManagerB.verifyPeerPayload(base.copy(v = 99))
+        assertTrue(badVersion is HandshakeVerificationResult.Error)
+        val badAction = handshakeManagerB.verifyPeerPayload(base.copy(action = "HELLO"))
+        assertTrue(badAction is HandshakeVerificationResult.Error)
+        val badNonce = handshakeManagerB.verifyPeerPayload(base.copy(nonce = ByteArray(4)))
+        assertTrue(badNonce is HandshakeVerificationResult.Error)
+    }
 }

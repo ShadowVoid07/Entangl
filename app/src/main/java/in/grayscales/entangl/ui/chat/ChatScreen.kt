@@ -1,14 +1,11 @@
 package `in`.grayscales.entangl.ui.chat
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,10 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -72,10 +67,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.domain.model.Contact
-import `in`.grayscales.entangl.domain.model.Direction
 import `in`.grayscales.entangl.domain.model.Message
-import `in`.grayscales.entangl.domain.model.MessageStatus
 import `in`.grayscales.entangl.ui.theme.ColorUtils
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -86,9 +80,6 @@ import `in`.grayscales.entangl.ui.theme.QuantumGreen
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -102,6 +93,7 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
     onShowMyQr: (() -> Unit)? = null,
+    onScanPeerQr: (() -> Unit)? = null,
     onAcceptContact: (() -> Unit)? = null,
     onDeclineContact: (() -> Unit)? = null,
     isPeerTyping: Boolean = false
@@ -109,6 +101,7 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var showSafetyDialog by remember { mutableStateOf(false) }
     var showNetworkInfoDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     val zeroizingMessageIds = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     val listState = rememberLazyListState()
 
@@ -126,6 +119,17 @@ fun ChatScreen(
         }
     }
 
+    if (showDeleteConfirmDialog) {
+        DeleteContactConfirmDialog(
+            contact = contact,
+            onConfirm = {
+                showDeleteConfirmDialog = false
+                onDeclineContact?.invoke()
+            },
+            onDismiss = { showDeleteConfirmDialog = false }
+        )
+    }
+
     if (showSafetyDialog) {
         SafetyNumberDialog(contact = contact, onDismiss = { showSafetyDialog = false })
     }
@@ -135,12 +139,20 @@ fun ChatScreen(
             contact = contact,
             isUnaccepted = !contact.isAccepted,
             isPendingReciprocal = contact.safetyNumber.startsWith("Pending"),
-            onDismiss = { showNetworkInfoDialog = false }
+            onDismiss = { showNetworkInfoDialog = false },
+            onTerminateEntanglement = {
+                showNetworkInfoDialog = false
+                showDeleteConfirmDialog = true
+            }
         )
     }
 
     val isUnaccepted = !contact.isAccepted
     val isPendingReciprocal = contact.safetyNumber.startsWith("Pending")
+    val hasEncryptedMessages = remember(messages) {
+        messages.any { it.plaintext == "Encrypted message" }
+    }
+    val isPendingChannel = isUnaccepted || isPendingReciprocal || hasEncryptedMessages
 
     val statusDotColor = when {
         isUnaccepted -> IsotopeMagenta
@@ -148,16 +160,23 @@ fun ChatScreen(
         else -> QuantumGreen
     }
 
-    val infiniteTransition = rememberInfiniteTransition()
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "statusDotPulse"
-    )
+    // Battery optimization: Only pulse status dot when in pending connection state.
+    // When the encrypted channel is established, freeze alpha to solid 1.0f to eliminate 60/120fps recompositions.
+    val pulseAlpha = if (isPendingChannel) {
+        val infiniteTransition = rememberInfiniteTransition(label = "statusDotTransition")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "statusDotPulse"
+        )
+        alpha
+    } else {
+        1f
+    }
 
     val statusSubtext = when {
         isUnaccepted -> "Pending connection request"
@@ -447,13 +466,13 @@ fun ChatScreen(
                     }
                 }
             }
-        } else if (isPendingReciprocal) {
-            // 2. Reciprocal QR Share Prompt Banner (when accepted but peer needs our QR code to reply)
+        } else if (isPendingReciprocal || hasEncryptedMessages) {
+            // Reciprocal QR Share Prompt Banner (when accepted but peer needs our QR code to reply, or incoming messages require decryption)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(DarkMatterVariant)
-                    .border(1.dp, QuantumCyan.copy(alpha = 0.5f))
+                    .border(1.dp, if (hasEncryptedMessages) IsotopeMagenta.copy(alpha = 0.7f) else QuantumCyan.copy(alpha = 0.5f))
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Row(
@@ -463,44 +482,75 @@ fun ChatScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Reciprocal verification pending",
+                            text = if (hasEncryptedMessages) "Encrypted messages received" else "Reciprocal verification pending",
                             fontFamily = QuantumMonospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
-                            color = QuantumCyan
+                            color = if (hasEncryptedMessages) IsotopeMagenta else QuantumCyan
                         )
                         Text(
-                            text = "Share or scan QR codes to mutually verify cryptographic safety numbers.",
+                            text = if (hasEncryptedMessages) "Scan peer's QR code to decrypt incoming messages." else "Scan peer's QR code to mutually verify cryptographic safety numbers.",
                             fontFamily = QuantumMonospace,
                             fontSize = 10.sp,
                             color = NeutronWhite
                         )
                     }
-                    if (onShowMyQr != null) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onShowMyQr,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.QrCode,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "SHARE QR",
-                                fontFamily = QuantumMonospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (onShowMyQr != null) {
+                            OutlinedButton(
+                                onClick = onShowMyQr,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = QuantumCyan
+                                ),
+                                border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.8f)),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCode,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp),
+                                    tint = QuantumCyan
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "MY QR",
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = QuantumCyan
+                                )
+                            }
+                        }
+                        val scanPeerAction = onScanPeerQr ?: onShowMyQr
+                        if (scanPeerAction != null) {
+                            Button(
+                                onClick = scanPeerAction,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (hasEncryptedMessages) IsotopeMagenta else QuantumCyan,
+                                    contentColor = if (hasEncryptedMessages) NeutronWhite else CyberDark
+                                ),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCodeScanner,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = if (hasEncryptedMessages) NeutronWhite else CyberDark
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (hasEncryptedMessages) "SCAN & DECRYPT" else "SCAN PEER",
+                                    fontFamily = QuantumMonospace,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hasEncryptedMessages) NeutronWhite else CyberDark
+                                )
+                            }
                         }
                     }
                 }
@@ -516,14 +566,27 @@ fun ChatScreen(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { message ->
-                MessageBubble(
-                    message = message,
-                    isZeroizing = zeroizingMessageIds.contains(message.id),
-                    onZeroized = {
-                        zeroizingMessageIds.remove(message.id)
-                    }
-                )
+            if (messages.isEmpty() && !isUnaccepted) {
+                item {
+                    EmptyChatBanner(
+                        contact = contact,
+                        selfDestructDuration = selfDestructDuration,
+                        onSayHello = {
+                            inputText = "👋 Hello!"
+                        }
+                    )
+                }
+            } else {
+                items(messages, key = { it.id }) { message ->
+                    MessageBubble(
+                        message = message,
+                        isZeroizing = zeroizingMessageIds.contains(message.id),
+                        onZeroized = {
+                            zeroizingMessageIds.remove(message.id)
+                        },
+                        onScanPeerQr = onScanPeerQr
+                    )
+                }
             }
         }
 
@@ -542,24 +605,62 @@ fun ChatScreen(
             }
         }
 
-        // Bottom Bar: Locked Info when unaccepted, or Input Bar when accepted
+        // Bottom Bar: Locked Info with 1-tap Accept when unaccepted, or Input Bar when accepted
         if (isUnaccepted) {
-            Box(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(DarkMatter)
-                    .border(1.dp, ParticleBorder)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                contentAlignment = Alignment.Center
+                    .border(1.dp, QuantumCyan.copy(alpha = 0.4f)),
+                color = DarkMatter
             ) {
-                val peerName = contact.displayName ?: "this peer"
-                Text(
-                    text = "Accept connection request from $peerName to enable messaging.",
-                    fontFamily = QuantumMonospace,
-                    fontSize = 11.sp,
-                    color = SubatomicGray,
-                    textAlign = TextAlign.Center
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val peerName = contact.displayName ?: "this peer"
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Connection pending from $peerName",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            color = NeutronWhite
+                        )
+                        Text(
+                            text = "Accept request to unlock direct encrypted chat",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 10.sp,
+                            color = SubatomicGray
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Button(
+                        onClick = { onAcceptContact?.invoke() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Accept & Chat",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
             }
         } else {
             Column(
@@ -579,7 +680,7 @@ fun ChatScreen(
                         onValueChange = { inputText = it },
                         placeholder = {
                             Text(
-                                text = "Type a message...",
+                                text = "Type an encrypted message...",
                                 fontFamily = QuantumMonospace,
                                 fontSize = 13.sp,
                                 color = SubatomicGray
@@ -594,7 +695,8 @@ fun ChatScreen(
                             cursorColor = QuantumCyan
                         ),
                         shape = RoundedCornerShape(12.dp),
-                        singleLine = true,
+                        singleLine = false,
+                        maxLines = 4,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             imeAction = androidx.compose.ui.text.input.ImeAction.Send
                         ),
@@ -608,23 +710,26 @@ fun ChatScreen(
                         )
                     )
 
-                    // Send Button
+                    // Dynamic Send Button with active / dimmed visual feedback
+                    val isSendActive = inputText.isNotBlank()
                     IconButton(
                         onClick = {
-                            if (inputText.isNotBlank()) {
+                            if (isSendActive) {
                                 onSendMessage(inputText)
                                 inputText = ""
                             }
                         },
+                        enabled = isSendActive,
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(QuantumCyan)
+                            .background(if (isSendActive) QuantumCyan else DarkMatterVariant)
+                            .border(1.dp, if (isSendActive) QuantumCyan else ParticleBorder, RoundedCornerShape(10.dp))
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
-                            tint = Color.Black,
+                            tint = if (isSendActive) Color.Black else SubatomicGray.copy(alpha = 0.5f),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -635,11 +740,152 @@ fun ChatScreen(
 }
 
 @Composable
+private fun EmptyChatBanner(
+    contact: Contact,
+    selfDestructDuration: Long?,
+    onSayHello: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val peerColor = contact.profileColor?.let { ColorUtils.parseColorOrNull(it) } ?: QuantumCyan
+    val peerName = contact.displayName ?: "Peer ${contact.uid.take(6).uppercase()}"
+    val ttlText = when (selfDestructDuration) {
+        null -> "Disabled"
+        30_000L -> "30 seconds"
+        300_000L -> "5 minutes"
+        3_600_000L -> "1 hour"
+        else -> "Active"
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp, horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(DarkMatter)
+                .border(1.dp, ParticleBorder, RoundedCornerShape(16.dp))
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(peerColor.copy(alpha = 0.18f))
+                    .border(1.5.dp, peerColor, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                val initials = contact.displayName?.trim()?.take(2)?.uppercase()
+                if (!initials.isNullOrBlank() && initials.length <= 2 && initials.all { it.isLetterOrDigit() }) {
+                    Text(
+                        text = initials,
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = peerColor
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = peerColor,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = peerName,
+                    fontFamily = QuantumMonospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = NeutronWhite,
+                    textAlign = TextAlign.Center
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = QuantumGreen,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "QUANTUM ENTANGLEMENT ACTIVE",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = QuantumGreen
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(DarkMatterVariant)
+                    .border(1.dp, ParticleBorder.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                    .padding(12.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "• End-to-end encrypted with ML-KEM-768 & Double Ratchet",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 10.sp,
+                        color = SubatomicGray,
+                        lineHeight = 14.sp
+                    )
+                    Text(
+                        text = "• Ephemeral messages (Self-destruct timer: $ttlText)",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 10.sp,
+                        color = SubatomicGray,
+                        lineHeight = 14.sp
+                    )
+                    Text(
+                        text = "• Zero-knowledge: relayed peer-to-peer without central storage",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 10.sp,
+                        color = SubatomicGray,
+                        lineHeight = 14.sp
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = onSayHello,
+                border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.7f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = QuantumCyan),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = "👋 SAY HELLO",
+                    fontFamily = QuantumMonospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = QuantumCyan
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun NetworkInfoDialog(
     contact: Contact,
     isUnaccepted: Boolean,
     isPendingReciprocal: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onTerminateEntanglement: (() -> Unit)? = null
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -691,22 +937,52 @@ private fun NetworkInfoDialog(
                     NetworkInfoRow(label = "SESSION STATE", value = statusValue, valueColor = statusColor)
                 }
 
-                Button(
-                    onClick = onDismiss,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "CLOSE",
-                        fontFamily = QuantumMonospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DarkMatterVariant,
+                            contentColor = QuantumCyan
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "CLOSE",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = QuantumCyan
+                        )
+                    }
+
+                    if (onTerminateEntanglement != null) {
+                        OutlinedButton(
+                            onClick = onTerminateEntanglement,
+                            modifier = Modifier.weight(1.3f),
+                            border = BorderStroke(1.dp, IsotopeMagenta.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = IsotopeMagenta),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = IsotopeMagenta
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "TERMINATE",
+                                fontFamily = QuantumMonospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = IsotopeMagenta
+                            )
+                        }
+                    }
                 }
             }
         }

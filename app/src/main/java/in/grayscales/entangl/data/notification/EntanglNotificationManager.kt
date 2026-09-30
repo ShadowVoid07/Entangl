@@ -96,7 +96,7 @@ class EntanglNotificationManager(
             .build()
 
         val notifId = NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF)
-        Log.i("EntanglNotification", "Posting incoming message notification (ID: $notifId) for contact $contactUid")
+        Log.d("EntanglNotification", "Posting incoming message notification (ID: $notifId) for contact $contactUid")
         notificationManager.notify(notifId, notification)
     }
 
@@ -149,7 +149,7 @@ class EntanglNotificationManager(
             .build()
 
         val notifId = NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF)
-        Log.i("EntanglNotification", "Posting scan ping notification (ID: $notifId) for peer $displayName ($contactUid)")
+        Log.d("EntanglNotification", "Posting scan ping notification (ID: $notifId) for peer $displayName ($contactUid)")
         notificationManager.notify(notifId, notification)
     }
 
@@ -195,7 +195,7 @@ class EntanglNotificationManager(
             .build()
 
         val notifId = NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF)
-        Log.i("EntanglNotification", "Posting scan accept notification (ID: $notifId) for peer $displayName ($contactUid)")
+        Log.d("EntanglNotification", "Posting scan accept notification (ID: $notifId) for peer $displayName ($contactUid)")
         notificationManager.notify(notifId, notification)
     }
 }

@@ -99,13 +99,79 @@
 
 ---
 
-### Entry 10
-- **Timestamp**: 2026-09-27 00:35:00
-- **File**: `app/src/main/java/in/grayscales/entangl/ui/qr/MyQrScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/QuantumScannerOverlay.kt`
-- **Lines**: `MyQrScreen.kt`: 1-45, 112-140, 148-245 (Modified); `QrScannerView.kt` / `QuantumScannerOverlay.kt`: 33, 370-395 (Modified)
-- **Purpose**: Dynamic Path-Measured TTL Depleting Border & Inner Navigation Arrow Elimination:
-  1. **Top-Middle Anchored TTL Depleting Border**: Replaced the static QR container border in `MyQrScreen.kt` with a dynamic path-measured stroke via `Modifier.drawWithCache`. Anchored the path origin directly at the top-middle (12 o'clock) coordinate `(topCenterX, bounds.top)` and traced clockwise with rounded corners. Extracted dynamic segments via `PathMeasure.getSegment(startDistance = totalLength * (1f - ttlProgress), stopDistance = totalLength)` animated by `animateFloatAsState(targetValue = secondsRemaining / 60f)`. This ensures the depletion gap initiates symmetrically at the top-middle and sweeps clockwise around the perimeter over the 60-second rolling nonce lifecycle, with the stroke transitioning from `QuantumCyan` to `IsotopeMagenta` during the critical final 10 seconds.
-  2. **Transmit Tab Inner Arrow Removal**: Removed the redundant back `IconButton` and spacer from the "QUANTUM UPLINK BEACON" header row in `MyQrScreen.kt`. The header now aligns cleanly as a vertical `Column` since navigation is globally governed by `MutualHandshakeScreen`'s Top App Bar.
-  3. **Receive Tab Camera Overlay De-Clutter**: Removed the redundant inner back `IconButton` from the camera controls overlay in `QrScannerView.kt`. Adjusted horizontal layout to `Arrangement.End`, pushing flashlight and camera flip controls seamlessly to the right edge and eliminating visual conflicts with the global handshake back button.
+---
 
+### Entry 11
+- **Timestamp**: 2026-09-27 05:40:00
+- **File**: `data/network/LocalTransferManager.kt`, `res/xml/data_extraction_rules.xml`, `shared/src/commonMain/kotlin/.../DefaultCryptoManager.kt`, `data/repository/MessageRepositoryImpl.kt`, `core/identity/NodeIdentityManager.kt`, `data/notification/EntanglNotificationManager.kt`, `core/security/KeyDestructionService.kt`, `data/network/NetworkTransport.kt`
+- **Purpose**: Alpha Stage Comprehensive Security Hardening & Zero-Leakage Remediations (SEC-01 through SEC-09):
+  1. **Transfer Payload Bound (SEC-01)**: Enforced a strict 50 MB upper bound (`MAX_TRANSFER_PAYLOAD_BYTES`) on incoming stream lengths in `LocalTransferManager` to eliminate potential remote `OutOfMemoryError` allocation exploits.
+  2. **Backup & D2D Transfer Isolation (SEC-02)**: Configured explicit exclude rules in `data_extraction_rules.xml` preventing Android 12+ cloud backups and device-to-device transfers from capturing SQLCipher vaults, encrypted preferences, or session keystores.
+  3. **Ratchet Sequence Skip Cap (SEC-03)**: Added a 1,000-message skip gap limit (`MAX_SKIP_GAP`) in `DefaultCryptoManager` to eliminate CPU/memory exhaustion denial-of-service vectors from fabricated wire sequence numbers.
+  4. **Anti-Replay Window Verification (SEC-04)**: Bound incoming envelope processing in `MessageRepositoryImpl` to a ±10 minute timestamp validity window (`ENVELOPE_MAX_AGE_MS` and `ENVELOPE_TIME_DRIFT_MS`), preventing stale or replayed envelopes from resurrecting expired self-destruct messages.
+  5. **Encrypted Identity Storage (SEC-05)**: Migrated `NodeIdentityManager` from plaintext SharedPreferences to `EncryptedSharedPreferences` backed by Android Keystore's MasterKey AES256_GCM, implementing automatic legacy migration and zeroization.
+  6. **Release Logging Metadata Elimination (SEC-06 & SEC-07)**: Downgraded notification and Keystore decommission telemetry to `Log.d` to ensure ProGuard `-assumenosideeffects` strips all contact UIDs, peer names, and Keystore aliases in release builds.
+  7. **Database Ciphertext Notice Sanitization (SEC-08)**: Replaced raw peer names in the database ciphertext column for connection notices with non-identifying tokens (`STATUS_NOTICE:CONNECTION_ACCEPTED`), resolving display names dynamically.
+  8. **JSON Field Sanitization (SEC-09)**: Sanitized field tokens in `NetworkTransport.extractJsonField` and `extractJsonLong` with `Regex.escape()` to prevent regex injection attacks.
+
+---
+
+### Entry 13
+- **Timestamp**: 2026-09-27 08:25:00
+- **File**: `app/src/main/java/in/grayscales/entangl/MainActivity.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/EmptyPeersState.kt`, `app/src/main/java/in/grayscales/entangl/ui/home/ChatListRow.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/home/HomeChatLayout.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/DeleteContactConfirmDialog.kt`, `docs/USERFLOW_AND_USAGE_ARCHITECTURE.md`
+- **Purpose**: Comprehensive Userflow, Navigation Hierarchy & Usage Architecture Overhaul:
+  1. **Decoupled Plaintext Reveal from Contact Deletion**: Fixed critical gesture collision in `ChatListRow.kt` where holding down a row to reveal privacy-blurred message previews triggered `onLongPress` and immediately destroyed the contact and ratchet session. Removed `onLongClick` deletion from `ChatListRow`, ensuring press-and-hold purely reveals the preview without risking accidental deletion.
+  2. **Cryptographic Deletion Guardrail (`DeleteContactConfirmDialog`)**: Created `DeleteContactConfirmDialog.kt` to guard all permanent contact and key destruction with a tactical confirmation dialog ("TERMINATE ENTANGLEMENT?"), warning that Double Ratchet session keys and encrypted history will be permanently wiped. Integrated into `ChatScreen.kt` via `NetworkInfoDialog`.
+  3. **Real-Time Peer Detection on Transmitter (Stranded Beacon Fix)**: In `MutualHandshakeScreen.kt`, observed `chatViewModel.contacts`. When an incoming peer scans the beacon and `SCAN_PING` creates a pending connection, an immediate in-app prompt ("PEER BEACON DETECTED") appears with 1-tap options: `[ ACCEPT & SCAN ]` (switches directly to Tab 1 to scan peer's QR code) or `[ ACCEPT & CHAT ]` (opens the conversation immediately).
+  4. **Intentional Tab Threading**: Added `initialTab: Int = 0` to `MutualHandshakeScreen.kt`. Updated `EmptyPeersState.kt` with explicit dual actions: `[ SCAN PEER QR ]` (Primary cyan button opening Tab 1 / Camera directly) and `[ SHOW MY BEACON ]` (Outlined button opening Tab 0 / QR code). Updated `ChatScreen.kt` reciprocal verification banner with `[ SCAN PEER ]` routing directly to Tab 1.
+  5. **Unified Navigation Backstack & Reactive Notification Deep-Linking**: Refactored `MainActivity.kt` from a flat enum to a Compose navigation stack (`screenStack = mutableStateListOf(...)`). Standardized `navigateTo(screen, initialTab)` and `navigateBack()`. Navigating `SETTINGS` -> `DEVICE_TRANSFER` -> Back now cleanly returns to `SETTINGS`. Bound `pendingNotificationContactUid` to reactively reset the stack to `[MESSAGES]` and select the contact upon notification tap.
+
+### Entry 14
+- **Timestamp**: 2026-09-27 08:35:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/profile/EditProfileScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ContactsScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/MessageBubble.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MyQrScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/home/HomeChatLayout.kt`
+- **Purpose**: System-Wide Usability, Messaging Comfort & Human-Centered UX Overhaul:
+  1. **Conversational Empty Chat State (`EmptyChatBanner`)**: Eliminated the barren empty void when opening a new chat in `ChatScreen.kt`. Replaced with a cybernetic security welcome card displaying the peer's custom avatar, initials, codename, post-quantum encryption reassurance (ML-KEM-768 + Double Ratchet), active ephemeral self-destruct status, zero-knowledge relay architecture, and a 1-tap `[ 👋 SAY HELLO ]` icebreaker button.
+  2. **Multi-Line Message Composing & Dynamic Send Feedback**: Upgraded `OutlinedTextField` from `singleLine = true` to `singleLine = false, maxLines = 4`, comfortably supporting multiline text, paragraphs, and formatted keys. Upgraded send button with active / dimmed states: glows vibrant `QuantumCyan` when text is typed and subtly mutes (`DarkMatterVariant`, 0.5f alpha) when empty.
+  3. **Message Long-Press Copy to Clipboard & Visual Pip**: In `MessageBubble.kt`, added long-press gesture handling on chat bubbles that copies the message plaintext directly to the Android `ClipboardManager`, triggers a tactile `LongPress` haptic pulse, and renders an animated `COPIED TO CLIPBOARD` floating badge.
+  4. **Dynamic Peer Search in Contact Roster**: In `ContactsScreen.kt`, added an interactive search bar with real-time filtering whenever a user has more than 2 peers. Allows searching contacts instantly by codename or UID with an instant clear button (X) and an elegant "NO PEERS MATCHING" empty state.
+  5. **Guarded Request Ignore**: In `ContactsScreen.kt`, protected the "Ignore" button on incoming connection cards by routing through `DeleteContactConfirmDialog` before discarding, preventing accidental deletion of pending connection requests.
+  6. **Human-Centered Handshake Terminology**: In `MutualHandshakeScreen.kt` and `HomeChatLayout.kt`, updated confusing sci-fi tabs ("TRANSMIT [BEACON]" / "RECEIVE [SENSOR]") to intuitive hybrid labels: `MY QR [BEACON]` and `SCAN QR [SENSOR]`. In `MyQrScreen.kt`, added a clear guidance subtitle: "Hold this screen out for your peer to scan with their camera."
+  7. **Smoother Onboarding Completion**: In `EditProfileScreen.kt`, replaced the generic "APPLY" button with "INITIALIZE IDENTITY", added real-time helper validation hints, and enabled keyboard `ImeAction.Done` to submit the profile immediately when valid.
+
+---
+
+### Entry 15
+- **Timestamp**: 2026-09-27 10:00:00
+- **File**: `app/src/main/java/in/grayscales/entangl/ui/chat/EmptyPeersState.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/QrScannerView.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/QuantumScannerOverlay.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MyQrScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/MutualHandshakeScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/qr/HandshakeConfirmDialog.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`
+- **Purpose**: Optical Mutual Handshake Flow & Empty State Humanization:
+  1. **Empty State Single-Action Clarity**: Consolidated the cramped dual buttons in `EmptyPeersState.kt` into a single, prominent, full-width `[ SCAN QR ]` button with high-contrast text and clean copy ("Your peer roster is empty.\nScan a friend's QR code to establish an encrypted connection."), eliminating decision paralysis when first launching the app.
+  2. **Mutual Camera Deadlock Elimination**: Resolved the real-world impasse where two peers both tap "Scan QR" and face each other with active cameras. Added a floating pill button in `QrScannerView.kt` (`[ 🔲 SHOW MY QR INSTEAD ]`) and a secondary button in `MyQrScreen.kt` (`[ 📷 SCAN PEER'S QR INSTEAD ]`), wired bidirectionally through `MutualHandshakeScreen.kt`.
+  3. **Rolling Nonce Forward-Secrecy Reassurance**: In `MyQrScreen.kt`, added reassuring micro-copy under the 60s countdown: "⏳ Nonce auto-renews every 60s for forward secrecy — take your time." to eliminate countdown panic.
+  4. **Tactile Optical Haptic Buzz**: In `QrScannerView.kt`, fired an immediate `LongPress` haptic buzz the exact millisecond either bundled ZXing or Google MLKit locks onto a valid QR frame.
+  5. **Personalized Peer Detection Ceremony**: In `MutualHandshakeScreen.kt`, replaced the generic green checkmark in the real-time detection dialog with the peer's actual avatar circle, initials, and profile color. Updated action buttons to intuitive labels: `[ 📷 SCAN PEER BACK ]` and `[ 💬 OPEN CHAT ]`.
+  6. **Safety Fingerprint Context Normalization**: In `HandshakeConfirmDialog.kt`, eliminated the confusing instruction asking the scanner to "match this with peer's screen" (since the transmitter's device is still showing their QR code). Replaced with clear context: "60-digit safety fingerprint generated. You can compare this anytime in chat settings to guarantee zero man-in-the-middle risk." and renamed action from "ESTABLISH ENTANGLEMENT" to `[ CONNECT WITH PEER ]`.
+  7. **Dual-Action Reciprocal Banner**: In `ChatScreen.kt`, provided both `[ MY QR ]` and `[ SCAN PEER ]` actions on the reciprocal verification prompt, accommodating whichever peer scanned first.
+
+---
+
+### Entry 16
+- **Timestamp**: 2026-09-27 16:25:00
+- **File**: `shared/src/commonMain/kotlin/in/grayscales/entangl/core/crypto/DefaultCryptoManager.kt`, `app/src/main/java/in/grayscales/entangl/data/local/dao/MessageDao.kt`, `app/src/main/java/in/grayscales/entangl/data/repository/MessageRepositoryImpl.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/MessageBubble.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatScreen.kt`, `app/src/main/java/in/grayscales/entangl/ui/chat/ChatViewModel.kt`, `app/src/test/java/in/grayscales/entangl/CryptoAndNetworkSecurityTest.kt`
+- **Purpose**: Bilateral QR Scan Decryption, Symmetric AAD Wire Alignment & In-Message Unlock UI:
+  1. **Fixed Cryptographic Tag Mismatch & Secret Symmetry (`DefaultCryptoManager`)**:
+     - *Deterministic Shared Secret*: Replaced asymmetric single-side ephemeral DH generation in `deriveSharedSecret` with a deterministic lexicographical ordering of `localPub` and `peerPublicKey`, ensuring Device A and Device B always derive the exact same root key regardless of who initiates or responds.
+     - *Wire-Invariant AEAD Binding*: In `encryptMessage` and `decryptMessage`, removed recipient-divergent AAD (`contactUid + ":" + seq`) which caused `AEADBadTagException` on the receiver (since sender used receiver's UID while receiver used sender's UID). Standardized to wire-invariant `"seq:$seq"`.
+  2. **Reactive Message Cache Invalidation & DB Unlock (`MessageRepositoryImpl`)**:
+     - Updated `observeForContact` to never permanently cache `"Encrypted message"` in `decryptedCache`. If a message was initially undecryptable (e.g. peer QR code not yet scanned), it automatically re-evaluates decryption as soon as the session key is initialized.
+     - Enhanced `unlockPendingMessages` to query all messages for the contact via `MessageDao.getMessagesForContact` and decrypt all incoming ciphertexts, updating their status to `DELIVERED` and posting them directly to the active Room stream.
+  3. **In-Bubble Interactive Decrypt Action (`EncryptedMessagePlaceholder`)**:
+     - In `MessageBubble.kt`, when a message body is undecrypted (`message.plaintext == "Encrypted message"`), replaced plain text with an interactive cybernetic card: displays an `IsotopeMagenta` lock badge, explanatory helper text ("Peer's cryptographic key needed to decrypt this transmission."), and a prominent cyan `[ 📷 SCAN PEER'S QR TO DECRYPT ]` button.
+     - Tapping the button directly opens the QR scanner from either device.
+  4. **Chat Header Decryption Alert Banner (`ChatScreen`)**:
+     - Evaluated `hasEncryptedMessages = messages.any { it.plaintext == "Encrypted message" }`.
+     - When encrypted messages arrive on either end, dynamically converts the top banner to high-visibility magenta ("Encrypted messages received • Scan peer's QR code to decrypt incoming messages.") with dual 1-tap actions: `[ 🔲 MY QR ]` and `[ 📷 SCAN & DECRYPT ]`.
+  5. **Handshake Contact Attribute Preservation (`ChatViewModel`)**:
+     - In `addContactFromHandshake`, preserved existing contact metadata (displayName, profileColor, createdAt) when completing a reciprocal scan, preventing unintended overwriting of established contact nicknames.
+  6. **Bilateral Cryptographic End-to-End Verification (`CryptoAndNetworkSecurityTest`)**:
+     - Added comprehensive unit test `testTwoEndedMutualSessionEncryptionAndDecryption`: verifies Alice scanning Bob, Alice sending a message, Bob attempting decryption before scanning (verifying initial encrypted state), Bob scanning Alice's QR code, Bob decrypting Alice's message, Bob replying, and Alice decrypting Bob's reply.
 

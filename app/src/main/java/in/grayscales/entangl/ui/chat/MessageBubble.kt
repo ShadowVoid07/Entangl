@@ -1,29 +1,39 @@
 package `in`.grayscales.entangl.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +51,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -50,8 +62,10 @@ import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.domain.model.Direction
 import `in`.grayscales.entangl.domain.model.Message
 import `in`.grayscales.entangl.domain.model.MessageStatus
+import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
+import `in`.grayscales.entangl.ui.theme.LunarGray
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
@@ -76,7 +90,8 @@ fun MessageBubble(
     message: Message,
     modifier: Modifier = Modifier,
     isZeroizing: Boolean = false,
-    onZeroized: () -> Unit = {}
+    onZeroized: () -> Unit = {},
+    onScanPeerQr: (() -> Unit)? = null
 ) {
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(message.id) {
@@ -137,7 +152,8 @@ fun MessageBubble(
         } else {
             UserMessageBubble(
                 message = message,
-                isZeroizing = isZeroizing
+                isZeroizing = isZeroizing,
+                onScanPeerQr = onScanPeerQr
             )
         }
     }
@@ -179,62 +195,133 @@ private fun SystemStatusBubble(message: Message) {
     }
 }
 
+/**
+ * Message frame per plan §4.1 (no bubbles): translucent data frame with neon
+ * edge marker and bracket addressing. Tunneling entrance: fast fade + vertical
+ * snap with haptic tick on send/receive (see ChatScreen send path).
+ */
 @Composable
 private fun UserMessageBubble(
     message: Message,
-    isZeroizing: Boolean
+    isZeroizing: Boolean,
+    onScanPeerQr: (() -> Unit)? = null
 ) {
-    val isOutgoing = message.direction == Direction.OUTGOING
-    val alignment = if (isOutgoing) Alignment.End else Alignment.Start
-    val bubbleColor = if (isOutgoing) Color(0xFF0C2B38) else Color(0xFF191924)
-    val borderColor = if (isZeroizing) {
-        IsotopeMagenta
-    } else if (isOutgoing) {
-        QuantumCyan.copy(alpha = 0.5f)
-    } else {
-        ParticleBorder
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    var isCopied by remember { mutableStateOf(false) }
+
+    fun copyWithAutoClear(text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            ?: return
+        clipboard.setPrimaryClip(ClipData.newPlainText("entangl", text))
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        isCopied = true
+        // Plan §5: clipboard auto-clear within 30s.
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                clipboard.clearPrimaryClip()
+            } catch (_: Exception) {
+            }
+            isCopied = false
+        }, 30_000L)
     }
-    val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+
+    val isOutgoing = message.direction == Direction.OUTGOING
+    val isEncrypted = message.plaintext == "Encrypted message"
+    val alignment = if (isOutgoing) Alignment.End else Alignment.Start
+    val bubbleColor = when {
+        isEncrypted -> Color(0xFF221124)
+        isOutgoing -> Color(0xFF0C2B38)
+        else -> Color(0xFF191924)
+    }
+    val borderColor = when {
+        isZeroizing -> IsotopeMagenta
+        isEncrypted -> IsotopeMagenta.copy(alpha = 0.7f)
+        isOutgoing -> QuantumCyan.copy(alpha = 0.5f)
+        else -> ParticleBorder
+    }
+    val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    // Plan §4.1: holographic data frame — square-ish panel + neon edge rail.
+    val edgeColor = when {
+        isZeroizing -> IsotopeMagenta
+        isEncrypted -> IsotopeMagenta.copy(alpha = 0.7f)
+        isOutgoing -> QuantumCyan.copy(alpha = 0.6f)
+        else -> QuantumGreen.copy(alpha = 0.45f)
+    }
+    val frameShape = RoundedCornerShape(4.dp)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment
     ) {
+        AnimatedVisibility(
+            visible = isCopied,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(300))
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(bottom = 3.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(QuantumCyan)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "COPIED TO CLIPBOARD",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = CyberDark
+                )
+            }
+        }
+
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.82f)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 14.dp,
-                        topEnd = 14.dp,
-                        bottomStart = if (isOutgoing) 14.dp else 2.dp,
-                        bottomEnd = if (isOutgoing) 2.dp else 14.dp
-                    )
-                )
+                .fillMaxWidth(0.85f)
+                .clip(frameShape)
                 .background(bubbleColor)
-                .border(
-                    1.dp,
-                    borderColor,
-                    RoundedCornerShape(
-                        topStart = 14.dp,
-                        topEnd = 14.dp,
-                        bottomStart = if (isOutgoing) 14.dp else 2.dp,
-                        bottomEnd = if (isOutgoing) 2.dp else 14.dp
+                .border(1.dp, borderColor, frameShape)
+                .pointerInput(message.id) {
+                    detectTapGestures(
+                        onLongPress = {
+                            if (!isEncrypted) {
+                                copyWithAutoClear(message.plaintext)
+                            }
+                        }
                     )
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                }
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Plaintext message body
-                Text(
-                    text = message.plaintext,
-                    fontFamily = QuantumMonospace,
-                    fontSize = 13.sp,
-                    color = NeutronWhite,
-                    lineHeight = 19.sp
+            // Neon edge rail per plan §4.1 (left for incoming, right for outgoing).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(if (isOutgoing) Alignment.TopEnd else Alignment.TopStart)
+                        .size(width = 2.dp, height = 28.dp)
+                        .background(edgeColor)
                 )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                if (isEncrypted) {
+                    EncryptedMessagePlaceholder(onScanPeerQr = onScanPeerQr)
+                } else {
+                    // Bracket-addressed body per plan §4.1: [ ... ].
+                    Text(
+                        text = "[ " + message.plaintext + " ]",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 13.sp,
+                        color = NeutronWhite,
+                        lineHeight = 19.sp
+                    )
+                }
 
-                // Metadata row: Timestamp, 3D Flip Ratchet Epoch Badge, TTL, and Status
+                // Metadata per plan §4.1: [SYS.TME: 14:02:45] [EPOCH] [STATUS].
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -245,10 +332,10 @@ private fun UserMessageBubble(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = timeFormatter.format(Date(message.timestamp)),
+                            text = "[SYS.TME: " + timeFormatter.format(Date(message.timestamp)) + "]",
                             fontFamily = QuantumMonospace,
-                            fontSize = 9.sp,
-                            color = SubatomicGray
+                            fontSize = 11.sp,
+                            color = LunarGray
                         )
 
                         // Ratcheted Epoch Badge: Tap for 3D rotationY flip
@@ -261,9 +348,9 @@ private fun UserMessageBubble(
                     ) {
                         if (message.selfDestructAt != null) {
                             Text(
-                                text = "TTL",
+                                text = "[TTL]",
                                 fontFamily = QuantumMonospace,
-                                fontSize = 8.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = IsotopeMagenta
                             )
@@ -273,31 +360,33 @@ private fun UserMessageBubble(
                             when (message.status) {
                                 MessageStatus.PENDING -> {
                                     Text(
-                                        text = "Sending...",
+                                        text = "[SENDING]",
                                         fontFamily = QuantumMonospace,
-                                        fontSize = 9.sp,
-                                        color = SubatomicGray
+                                        fontSize = 11.sp,
+                                        color = LunarGray
                                     )
                                 }
                                 MessageStatus.SENT -> {
-                                    Icon(
-                                        imageVector = Icons.Default.Done,
-                                        contentDescription = "Sent",
-                                        tint = SubatomicGray,
-                                        modifier = Modifier.size(12.dp)
+                                    Text(
+                                        text = "[SENT]",
+                                        fontFamily = QuantumMonospace,
+                                        fontSize = 11.sp,
+                                        color = LunarGray
                                     )
                                 }
                                 MessageStatus.DELIVERED, MessageStatus.READ -> {
-                                    Icon(
-                                        imageVector = Icons.Default.DoneAll,
-                                        contentDescription = "Delivered",
-                                        tint = QuantumCyan,
-                                        modifier = Modifier.size(14.dp)
+                                    Text(
+                                        text = "[DELVRD]",
+                                        fontFamily = QuantumMonospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = QuantumCyan
                                     )
                                 }
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -390,6 +479,85 @@ fun RatchetedEpochBadge(
                     color = QuantumCyan,
                     letterSpacing = 0.5.sp
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Visual placeholder rendered when a message ciphertext has arrived but the cryptographic
+ * session key has not yet been derived (e.g. peer's QR code has not yet been scanned).
+ * Displays a cryptographic lock badge and a prominent button to scan peer's QR code.
+ */
+@Composable
+private fun EncryptedMessagePlaceholder(
+    onScanPeerQr: (() -> Unit)? = null
+) {
+    Column(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = IsotopeMagenta.copy(alpha = 0.2f),
+                border = BorderStroke(1.dp, IsotopeMagenta.copy(alpha = 0.5f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = IsotopeMagenta,
+                    modifier = Modifier.padding(4.dp).size(12.dp)
+                )
+            }
+            Text(
+                text = "Encrypted message",
+                fontFamily = QuantumMonospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = IsotopeMagenta
+            )
+        }
+
+        Text(
+            text = "Peer's cryptographic key needed to decrypt this transmission.",
+            fontFamily = QuantumMonospace,
+            fontSize = 10.sp,
+            color = SubatomicGray,
+            lineHeight = 14.sp
+        )
+
+        if (onScanPeerQr != null) {
+            Button(
+                onClick = onScanPeerQr,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = QuantumCyan.copy(alpha = 0.15f),
+                    contentColor = QuantumCyan
+                ),
+                border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "SCAN PEER'S QR TO DECRYPT",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                }
             }
         }
     }

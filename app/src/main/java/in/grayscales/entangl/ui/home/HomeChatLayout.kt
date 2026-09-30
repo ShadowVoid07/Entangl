@@ -192,7 +192,8 @@ fun HomeChatLayout(
                     onOpenDashboard = onOpenDashboard,
                     localUsername = localUsername,
                     localProfileColor = localProfileColor,
-                    onUpdateProfile = onUpdateProfile
+                    onUpdateProfile = onUpdateProfile,
+                    isPrivacyBlurEnabled = isPrivacyBlurEnabled
                 )
             },
             detailPane = {
@@ -206,6 +207,7 @@ fun HomeChatLayout(
                         onBack = { onSelectContact(null) },
                         showBackButton = !isDualPane,
                         onShowMyQr = onShowMyQr,
+                        onScanPeerQr = onScanQr,
                         onAcceptContact = { onAcceptContact(activeContact) },
                         onDeclineContact = {
                             onDeleteContact(activeContact)
@@ -297,7 +299,7 @@ private fun StandbyPane(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "SCAN QR",
+                        text = "SCAN PEER QR",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
@@ -319,7 +321,7 @@ private fun StandbyPane(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "MY QR",
+                        text = "SHOW MY BEACON",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp

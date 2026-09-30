@@ -31,6 +31,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE contactUid = :contactUid AND (direction = 0 OR direction = 2) AND status = 0")
     suspend fun getPendingIncomingForContact(contactUid: String): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE contactUid = :contactUid ORDER BY timestamp ASC")
+    suspend fun getMessagesForContact(contactUid: String): List<MessageEntity>
+
     @Query("SELECT COUNT(*) > 0 FROM messages WHERE contactUid = :contactUid AND id LIKE 'accept-%'")
     suspend fun hasAcceptanceNotice(contactUid: String): Boolean
 

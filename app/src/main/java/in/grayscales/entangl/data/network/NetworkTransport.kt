@@ -6,11 +6,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -58,7 +60,7 @@ data class TransportEnvelope(
         const val TYPE_SCAN_PING = "SCAN_PING"
         const val TYPE_SCAN_ACCEPT = "SCAN_ACCEPT"
         const val TYPE_IDENTITY_ROTATION = "IDENTITY_ROTATION"
-        const val FIXED_PAYLOAD_SIZE = 4096
+        const val FIXED_PAYLOAD_SIZE = 2048
 
         fun padPayload(data: ByteArray, targetSize: Int = FIXED_PAYLOAD_SIZE): ByteArray {
             if (data.size + 4 > targetSize) {
@@ -132,15 +134,77 @@ data class TransportEnvelope(
         }
 
         fun extractJsonField(json: String, field: String): String? {
-            val pattern = "\"$field\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"".toRegex()
-            val match = pattern.find(json) ?: return null
-            return unescapeJson(match.groupValues[1])
+            val key = "\"$field\""
+            var keyIdx = json.indexOf(key)
+            while (keyIdx != -1) {
+                var colonIdx = keyIdx + key.length
+                while (colonIdx < json.length && json[colonIdx].isWhitespace()) {
+                    colonIdx++
+                }
+                if (colonIdx < json.length && json[colonIdx] == ':') {
+                    var valStart = colonIdx + 1
+                    while (valStart < json.length && json[valStart].isWhitespace()) {
+                        valStart++
+                    }
+                    if (valStart < json.length && json[valStart] == '"') {
+                        var curr = valStart + 1
+                        val sb = StringBuilder()
+                        var escaped = false
+                        while (curr < json.length) {
+                            val c = json[curr]
+                            if (escaped) {
+                                when (c) {
+                                    '"' -> sb.append('"')
+                                    '\\' -> sb.append('\\')
+                                    '/' -> sb.append('/')
+                                    'b' -> sb.append('\b')
+                                    'f' -> sb.append('\u000C')
+                                    'n' -> sb.append('\n')
+                                    'r' -> sb.append('\r')
+                                    't' -> sb.append('\t')
+                                    else -> sb.append(c)
+                                }
+                                escaped = false
+                            } else if (c == '\\') {
+                                escaped = true
+                            } else if (c == '"') {
+                                return sb.toString()
+                            } else {
+                                sb.append(c)
+                            }
+                            curr++
+                        }
+                    }
+                }
+                keyIdx = json.indexOf(key, keyIdx + 1)
+            }
+            return null
         }
 
         fun extractJsonLong(json: String, field: String): Long? {
-            val pattern = "\"$field\"\\s*:\\s*(\\d+)".toRegex()
-            val match = pattern.find(json) ?: return null
-            return match.groupValues[1].toLongOrNull()
+            val key = "\"$field\""
+            var keyIdx = json.indexOf(key)
+            while (keyIdx != -1) {
+                var colonIdx = keyIdx + key.length
+                while (colonIdx < json.length && json[colonIdx].isWhitespace()) {
+                    colonIdx++
+                }
+                if (colonIdx < json.length && json[colonIdx] == ':') {
+                    var valStart = colonIdx + 1
+                    while (valStart < json.length && json[valStart].isWhitespace()) {
+                        valStart++
+                    }
+                    var valEnd = valStart
+                    while (valEnd < json.length && (json[valEnd].isDigit() || json[valEnd] == '-')) {
+                        valEnd++
+                    }
+                    if (valEnd > valStart) {
+                        return json.substring(valStart, valEnd).toLongOrNull()
+                    }
+                }
+                keyIdx = json.indexOf(key, keyIdx + 1)
+            }
+            return null
         }
 
         private fun escapeJson(s: String): String = buildString {
@@ -252,12 +316,14 @@ class NetworkTransport(
      */
     fun signEnvelope(envelope: TransportEnvelope): TransportEnvelope {
         val kpg = keyPairGenerator ?: return envelope
-        val identityPub = if (envelope.senderIdentityPub.isNotEmpty()) {
+        val storedKey = kpg.getStoredIdentityPublicKey() ?: kpg.generateIdentityKeyPair()
+        // If envelope already has a valid EC identity key (size != 32 bytes for raw X25519), keep it; otherwise use Keystore identity key
+        val identityPub = if (envelope.senderIdentityPub.isNotEmpty() && envelope.senderIdentityPub.size != 32) {
             envelope.senderIdentityPub
         } else {
-            kpg.getStoredIdentityPublicKey() ?: ByteArray(0)
+            storedKey
         }
-        val target = if (envelope.senderIdentityPub.isEmpty()) envelope.copy(senderIdentityPub = identityPub) else envelope
+        val target = envelope.copy(senderIdentityPub = identityPub)
         val canonical = target.getCanonicalData()
         val sig = kpg.sign(canonical)
         return target.copy(signature = sig)
@@ -265,7 +331,11 @@ class NetworkTransport(
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val listeningJobs = mutableListOf<Job>()
-    private var isRunning = false
+    @Volatile
+    private var _isRunning = false
+
+    val isRunning: Boolean
+        get() = _isRunning
 
     private val listeners = mutableListOf<suspend (TransportEnvelope) -> Unit>()
     private val ackListeners = mutableListOf<suspend (messageId: String) -> Unit>()
@@ -279,8 +349,40 @@ class NetworkTransport(
     @Volatile
     private var currentRelayIndex = 0
 
+    @Volatile
+    private var _isForeground = true
+
+    val isForeground: Boolean
+        get() = _isForeground
+
+    private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
+
+    @Volatile
+    private var currentStreamConn: HttpURLConnection? = null
+
     val activeRelay: String
         get() = RELAY_SERVERS[currentRelayIndex.coerceIn(0, RELAY_SERVERS.lastIndex)]
+
+    /**
+     * Updates foreground/background lifecycle state.
+     * When backgrounded, the persistent SSE stream is closed so the transport switches to
+     * coalesced burst polling, allowing the cellular baseband to drop into low-power idle/DRX (~10-20mA).
+     * When returning to foreground, wakeSignal is triggered to instantly connect persistent streaming.
+     */
+    fun setForeground(inForeground: Boolean) {
+        val changed = _isForeground != inForeground
+        _isForeground = inForeground
+        if (changed) {
+            log("NetworkTransport lifecycle state changed: isForeground=$inForeground")
+            if (inForeground) {
+                wakeSignal.trySend(Unit)
+            } else {
+                try {
+                    currentStreamConn?.disconnect()
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     fun addListener(listener: suspend (TransportEnvelope) -> Unit) {
         synchronized(listeners) {
@@ -295,13 +397,13 @@ class NetworkTransport(
     }
 
     /**
-     * Start background subscription to the local device's encrypted inbox topic.
-     * Uses an active primary relay with automatic failover across the relay pool and
-     * exponential backoff with jitter on connection drops to conserve radio power and battery.
+     * Start subscription to the local device's encrypted inbox topic.
+     * In foreground: uses persistent SSE streaming for instant (<100ms) message delivery.
+     * In background: switches to coalesced burst polling with 30s duty-cycling to conserve cellular radio battery.
      */
     fun startListening(localUid: String) {
-        if (isRunning) return
-        isRunning = true
+        if (_isRunning) return
+        _isRunning = true
         val topic = getTopicForUid(localUid)
         log("Starting NetworkTransport battery-optimized listener for UID $localUid on topic $topic")
 
@@ -309,35 +411,44 @@ class NetworkTransport(
             listeningJobs.clear()
             val job = scope.launch {
                 var backoffCount = 0
-                while (isActive && isRunning) {
+                while (isActive && _isRunning) {
+                    val inForeground = _isForeground
                     val relay = RELAY_SERVERS[currentRelayIndex % RELAY_SERVERS.size]
-                    val streamCompletedCleanly = try {
-                        streamInbox(relay, topic, localUid)
+                    val fetchSuccess = try {
+                        streamInbox(relay, topic, localUid, isStreaming = inForeground)
                     } catch (e: Exception) {
                         log("Transport stream encounter on $relay: ${e.message}")
                         false
                     }
 
-                    if (!isActive || !isRunning) break
+                    if (!isActive || !_isRunning) break
 
-                    if (streamCompletedCleanly) {
+                    if (fetchSuccess) {
                         backoffCount = 0
-                    } else {
+                    } else if (inForeground) {
                         backoffCount++
                         currentRelayIndex = (currentRelayIndex + 1) % RELAY_SERVERS.size
                         log("Failing over to relay ${activeRelay} (attempt $backoffCount)")
                     }
 
-                    // Battery optimization: Exponential backoff with jitter on errors
-                    // Prevents keeping cellular radio in high-power state when disconnected or server is down
-                    val delayMs = if (backoffCount == 0) {
-                        1500L
+                    // Battery optimization:
+                    // If in foreground: reconnect after short delay (or exponential backoff on error)
+                    // If in background: enter low-power sleep for 30s burst interval, or wake immediately on wakeSignal
+                    if (inForeground) {
+                        val delayMs = if (backoffCount == 0) {
+                            1500L
+                        } else {
+                            val base = (2500L * (1L shl (backoffCount - 1).coerceAtMost(5))).coerceAtMost(60_000L)
+                            val jitter = kotlin.random.Random.nextLong(0, 1000)
+                            base + jitter
+                        }
+                        delay(delayMs)
                     } else {
-                        val base = (2500L * (1L shl (backoffCount - 1).coerceAtMost(5))).coerceAtMost(60_000L)
-                        val jitter = kotlin.random.Random.nextLong(0, 1000)
-                        base + jitter
+                        // Radio duty-cycling: wait up to 30s or wake instantly if user returns to foreground
+                        withTimeoutOrNull(30_000L) {
+                            wakeSignal.receive()
+                        }
                     }
-                    delay(delayMs)
                 }
             }
             listeningJobs.add(job)
@@ -345,7 +456,10 @@ class NetworkTransport(
     }
 
     fun stopListening() {
-        isRunning = false
+        _isRunning = false
+        try {
+            currentStreamConn?.disconnect()
+        } catch (_: Exception) {}
         synchronized(listeningJobs) {
             listeningJobs.forEach { it.cancel() }
             listeningJobs.clear()
@@ -392,26 +506,32 @@ class NetworkTransport(
     ): Boolean {
         val url = URL("$relay/$topic")
         var conn: HttpURLConnection? = null
+        var inStream: java.io.InputStream? = null
+        var errStream: java.io.InputStream? = null
+        var outStream: java.io.OutputStream? = null
         return try {
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 6000
                 readTimeout = 6000
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Content-Type", "text/plain; charset=utf-8")
                 setRequestProperty("Title", "entangl")
             }
 
-            OutputStreamWriter(conn.outputStream, "UTF-8").use { writer ->
+            outStream = conn.outputStream
+            OutputStreamWriter(outStream, "UTF-8").use { writer ->
                 writer.write(payloadJson)
                 writer.flush()
             }
 
             val code = conn.responseCode
             if (code in 200..299) {
+                inStream = conn.inputStream
                 log("Successfully sent envelope $envelopeId ($envelopeType) to $relay/$topic (HTTP $code)")
                 true
             } else {
+                errStream = conn.errorStream
                 log("Relay $relay returned HTTP $code for envelope $envelopeId")
                 false
             }
@@ -419,7 +539,12 @@ class NetworkTransport(
             log("Failed sending envelope $envelopeId to $relay: ${e.message}")
             false
         } finally {
-            conn?.disconnect()
+            try { outStream?.close() } catch (_: Exception) {}
+            try { inStream?.close() } catch (_: Exception) {}
+            try { errStream?.close() } catch (_: Exception) {}
+            try { conn?.inputStream?.close() } catch (_: Exception) {}
+            try { conn?.errorStream?.close() } catch (_: Exception) {}
+            try { conn?.disconnect() } catch (_: Exception) {}
         }
     }
 
@@ -427,11 +552,14 @@ class NetworkTransport(
      * Send a delivery acknowledgment back to the original sender.
      */
     suspend fun sendDeliveryAck(messageId: String, senderUid: String, localUid: String) {
+        val identityPub = keyPairGenerator?.getStoredIdentityPublicKey()
+            ?: keyPairGenerator?.generateIdentityKeyPair()
+            ?: ByteArray(0)
         val ackEnvelope = TransportEnvelope(
             id = messageId,
             type = TransportEnvelope.TYPE_DELIVERY_ACK,
             senderUid = localUid,
-            senderIdentityPub = ByteArray(0),
+            senderIdentityPub = identityPub,
             senderOnion = "",
             recipientUid = senderUid,
             ciphertext = ByteArray(0)
@@ -489,50 +617,75 @@ class NetworkTransport(
         return sendEnvelope(envelope)
     }
 
-    private suspend fun streamInbox(relay: String, topic: String, localUid: String): Boolean = withContext(Dispatchers.IO) {
-        val url = URL("$relay/$topic/json?since=10m")
+    private suspend fun streamInbox(
+        relay: String,
+        topic: String,
+        localUid: String,
+        isStreaming: Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        val url = if (isStreaming) {
+            URL("$relay/$topic/json?since=24h")
+        } else {
+            // Coalesced burst poll: fetches buffered messages in one quick round-trip and disconnects immediately
+            URL("$relay/$topic/json?poll=1&since=24h")
+        }
         var conn: HttpURLConnection? = null
-        var streamedAnyData = false
+        var inStream: java.io.InputStream? = null
+        var errStream: java.io.InputStream? = null
 
         try {
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
-                readTimeout = 90000 // 90s read timeout; ntfy keepalives arrive every 15-30s
+                readTimeout = if (isStreaming) 90000 else 10000
+            }
+            if (isStreaming) {
+                currentStreamConn = conn
             }
 
             val code = conn.responseCode
             if (code in 200..299) {
-                log("Connected stream to $relay/$topic")
-                BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { reader ->
-                    while (isActive && isRunning) {
+                log("Connected ${if (isStreaming) "stream" else "burst-poll"} to $relay/$topic")
+                inStream = conn.inputStream
+                BufferedReader(InputStreamReader(inStream, "UTF-8")).use { reader ->
+                    while (isActive && _isRunning) {
                         val line = reader.readLine() ?: break
-                        streamedAnyData = true
                         val current = line.trim()
                         if (current.isEmpty()) continue
                         try {
                             val messageContent = TransportEnvelope.extractJsonField(current, "message") ?: ""
-                            if (messageContent.isNotEmpty()) {
-                                val envelope = TransportEnvelope.fromJson(messageContent)
-                                if (envelope != null && envelope.recipientUid.trim().equals(localUid.trim(), ignoreCase = true)) {
-                                    dispatchEnvelope(envelope)
-                                }
+                            val envelope = if (messageContent.isNotEmpty()) {
+                                TransportEnvelope.fromJson(messageContent)
+                            } else {
+                                TransportEnvelope.fromJson(current)
+                            } ?: TransportEnvelope.fromJson(current)
+
+                            if (envelope != null && envelope.recipientUid.trim().equals(localUid.trim(), ignoreCase = true)) {
+                                dispatchEnvelope(envelope)
                             }
                         } catch (e: Exception) {
                             log("Error parsing stream message from $relay: ${e.message}")
                         }
                     }
                 }
-                streamedAnyData
+                true
             } else {
-                log("Stream connect to $relay/$topic failed with HTTP $code")
+                errStream = conn.errorStream
+                log("${if (isStreaming) "Stream" else "Poll"} connect to $relay/$topic failed with HTTP $code")
                 false
             }
         } catch (e: Exception) {
-            log("Stream disconnect/error on $relay: ${e.message}")
+            log("Stream/poll encounter on $relay: ${e.message}")
             false
         } finally {
-            conn?.disconnect()
+            if (isStreaming && currentStreamConn == conn) {
+                currentStreamConn = null
+            }
+            try { inStream?.close() } catch (_: Exception) {}
+            try { errStream?.close() } catch (_: Exception) {}
+            try { conn?.inputStream?.close() } catch (_: Exception) {}
+            try { conn?.errorStream?.close() } catch (_: Exception) {}
+            try { conn?.disconnect() } catch (_: Exception) {}
         }
     }
 
@@ -597,6 +750,7 @@ class NetworkTransport(
 
     companion object {
         val RELAY_SERVERS = listOf(
+            "https://ntfy.sh",
             "https://ntfy.tedomum.fr",
             "https://ntfy.envs.net",
             "https://ntfy.adminforge.de"

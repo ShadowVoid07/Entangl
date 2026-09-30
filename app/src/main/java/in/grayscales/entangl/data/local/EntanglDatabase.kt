@@ -8,12 +8,14 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import `in`.grayscales.entangl.data.local.converter.CryptoTypeConverters
 import `in`.grayscales.entangl.data.local.dao.ContactDao
 import `in`.grayscales.entangl.data.local.dao.MessageDao
 import `in`.grayscales.entangl.data.local.entity.ContactEntity
 import `in`.grayscales.entangl.data.local.entity.MessageEntity
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -22,7 +24,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 @Database(
     entities = [ContactEntity::class, MessageEntity::class],
-    version = 1,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(CryptoTypeConverters::class)
@@ -36,6 +38,41 @@ abstract class EntanglDatabase : RoomDatabase() {
         private const val KEYSTORE_ALIAS = "entangl_sqlcipher_master_key"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Idempotently add profileColor column to contacts table if not already present
+                var hasProfileColor = false
+                val cursor = db.query("PRAGMA table_info(contacts)")
+                try {
+                    val nameIdx = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        if (nameIdx != -1 && "profileColor".equals(cursor.getString(nameIdx), ignoreCase = true)) {
+                            hasProfileColor = true
+                            break
+                        }
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    cursor.close()
+                }
+
+                if (!hasProfileColor) {
+                    db.execSQL("ALTER TABLE contacts ADD COLUMN profileColor TEXT DEFAULT NULL")
+                }
+
+                // Add selfDestructAt index to messages table if not exists
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_selfDestructAt ON messages(selfDestructAt)")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Military-grade mutual handshake state: explicit optical verification in both directions.
+                db.execSQL("ALTER TABLE contacts ADD COLUMN hasScannedPeer INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE contacts ADD COLUMN hasBeenScanned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var INSTANCE: EntanglDatabase? = null
 
@@ -46,8 +83,9 @@ abstract class EntanglDatabase : RoomDatabase() {
         }
 
         private fun buildDatabase(context: Context): EntanglDatabase {
+            System.loadLibrary("sqlcipher")
             val passphrase = getOrCreateDatabasePassphrase(context)
-            val factory = SupportFactory(passphrase)
+            val factory = SupportOpenHelperFactory(passphrase)
 
             return Room.databaseBuilder(
                 context.applicationContext,
@@ -55,6 +93,7 @@ abstract class EntanglDatabase : RoomDatabase() {
                 DB_NAME
             )
                 .openHelperFactory(factory)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigration(true)
                 .build()
         }
