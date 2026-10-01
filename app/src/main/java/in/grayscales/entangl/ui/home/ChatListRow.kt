@@ -127,13 +127,16 @@ fun ChatListRow(
                         }
                     }
 
-                    // Liveness pip: pending handshake = magenta; accepted peers show
-                    // green ONLY with fresh verified traffic, gray otherwise.
+                    // Liveness pip: pending handshake = magenta; blocked = gray (muted
+                    // regardless of traffic); accepted peers show green ONLY with
+                    // fresh verified traffic, gray otherwise.
                     val lastSeen = contact.lastSeenAt ?: 0L
-                    val isLive = !isPending && (nowMillis - lastSeen) <= Contact.PRESENCE_ACTIVE_WINDOW_MS &&
+                    val isLive = !isPending && !isBlocked &&
+                        (nowMillis - lastSeen) <= Contact.PRESENCE_ACTIVE_WINDOW_MS &&
                         lastSeen > 0L
                     val pipColor = when {
                         isPending -> IsotopeMagenta
+                        isBlocked -> SubatomicGray
                         isLive -> QuantumGreen
                         else -> SubatomicGray
                     }
@@ -240,7 +243,7 @@ fun ChatListRow(
             if (onOptionsClick != null) {
                 androidx.compose.material3.IconButton(
                     onClick = onOptionsClick,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,

@@ -361,6 +361,11 @@ class NetworkTransport(
     @Volatile
     private var currentRelayIndex = 0
 
+    /** Last confirmed relay contact (2xx), any relay, either direction. */
+    @Volatile
+    var lastRelaySuccessAt: Long = 0L
+        private set
+
     @Volatile
     private var _isForeground = true
 
@@ -540,6 +545,7 @@ class NetworkTransport(
             val code = conn.responseCode
             if (code in 200..299) {
                 inStream = conn.inputStream
+                lastRelaySuccessAt = System.currentTimeMillis()
                 log("Successfully sent envelope $envelopeId ($envelopeType) to $relay/$topic (HTTP $code)")
                 true
             } else {
@@ -658,6 +664,7 @@ class NetworkTransport(
             val code = conn.responseCode
             if (code in 200..299) {
                 log("Connected ${if (isStreaming) "stream" else "burst-poll"} to $relay/$topic")
+                lastRelaySuccessAt = System.currentTimeMillis()
                 inStream = conn.inputStream
                 BufferedReader(InputStreamReader(inStream, "UTF-8")).use { reader ->
                     while (isActive && _isRunning) {

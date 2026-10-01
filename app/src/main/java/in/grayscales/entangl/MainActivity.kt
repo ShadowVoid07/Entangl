@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +57,7 @@ import androidx.core.content.edit
 import `in`.grayscales.entangl.core.security.PlatformSecurity
 import `in`.grayscales.entangl.core.security.SecurityEvent
 import `in`.grayscales.entangl.data.network.EntanglRelayService
+import `in`.grayscales.entangl.data.network.NetworkMonitor
 import `in`.grayscales.entangl.domain.model.Contact
 import `in`.grayscales.entangl.ui.chat.ChatViewModel
 import `in`.grayscales.entangl.ui.navigation.QuantumTwoPaneLayout
@@ -93,8 +95,10 @@ class MainActivity : ComponentActivity() {
 
     private val platformSecurity: PlatformSecurity by inject()
     private val keyDestructionService: `in`.grayscales.entangl.core.security.KeyDestructionService by inject()
+    private val networkMonitor: NetworkMonitor by inject()
     private val chatViewModel: ChatViewModel by viewModel()
     private val pendingNotificationContactUid = mutableStateOf<String?>(null)
+    private val pendingNotificationReceivedAt = mutableLongStateOf(0L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -206,6 +210,7 @@ class MainActivity : ComponentActivity() {
 
                 val contacts by chatViewModel.contacts.collectAsState()
                 val lastMessages by chatViewModel.lastMessages.collectAsState()
+                val networkQuality by networkMonitor.quality.collectAsState()
                 val activeContact by chatViewModel.activeContact.collectAsState()
                 val activeMessages by chatViewModel.activeMessages.collectAsState()
                 val selfDestructDuration by chatViewModel.selfDestructDuration.collectAsState()
@@ -225,12 +230,23 @@ class MainActivity : ComponentActivity() {
                 // Reactive handler for incoming notification deep-links.
                 // Validated: pending/deleted contacts route to HANDSHAKE (not a dead chat),
                 // and an in-progress scan is never yanked out from under the user.
-                LaunchedEffect(pendingNotificationContactUid.value) {
+                // Unknown UIDs are retained briefly: on cold start the roster may not
+                // have loaded yet, and dropping immediately loses the tap.
+                LaunchedEffect(pendingNotificationContactUid.value, contacts) {
                     val uid = pendingNotificationContactUid.value
                     if (!uid.isNullOrBlank()) {
                         val target = contacts.firstOrNull { it.uid == uid }
                         if (target == null) {
+                            val age = System.currentTimeMillis() - pendingNotificationReceivedAt.longValue
+                            if (age < 8_000L) {
+                                return@LaunchedEffect
+                            }
                             pendingNotificationContactUid.value = null
+                            android.widget.Toast.makeText(
+                                this@MainActivity,
+                                "Contact not found",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         } else if (!target.isAccepted) {
                             pendingNotificationContactUid.value = null
                             chatViewModel.selectContact(null)
@@ -688,7 +704,9 @@ class MainActivity : ComponentActivity() {
                                     localUsername = currentUsername,
                                     localProfileColor = currentProfileColor,
                                     onBack = { navigateBack() },
-                                    onDeviceTransfer = { navigateTo(AppScreen.DEVICE_TRANSFER) }
+                                    onDeviceTransfer = { navigateTo(AppScreen.DEVICE_TRANSFER) },
+                                    networkQuality = networkQuality,
+                                    onRenewTransport = { networkMonitor.restartTransport() }
                                 )
                             }
 
@@ -715,6 +733,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         val contactUid = intent?.getStringExtra(EXTRA_CONTACT_UID)
         if (!contactUid.isNullOrBlank()) {
+            pendingNotificationReceivedAt.longValue = System.currentTimeMillis()
             pendingNotificationContactUid.value = contactUid
         }
     }

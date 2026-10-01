@@ -33,6 +33,20 @@ class EntanglNotificationManager(
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     /**
+     * Stable per-contact notification IDs. The old `hashCode() and 0x7FFF` scheme
+     * collided across peers (one peer's notification overwrote another's, and a
+     * colliding PendingIntent could deep-link the wrong chat). Allocated once per
+     * UID, capped to keep IDs in range.
+     */
+    private val notificationIds = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val nextNotificationId = java.util.concurrent.atomic.AtomicInteger(1)
+
+    private fun notificationIdFor(contactUid: String): Int =
+        notificationIds.getOrPut(contactUid) {
+            NOTIFICATION_ID_BASE + (nextNotificationId.getAndIncrement() and 0x7FFF)
+        }
+
+    /**
      * UID of the conversation currently open on screen, if any. While set,
      * incoming-message notifications for that peer are suppressed (no buzz/shade
      * spam for a chat the user is already reading) — delivery, storage and ACKs
@@ -94,10 +108,12 @@ class EntanglNotificationManager(
             putExtra(MainActivity.EXTRA_CONTACT_UID, contactUid)
         }
 
-        // FLAG_IMMUTABLE prevents malicious modification of intent parameters
+        // FLAG_IMMUTABLE prevents malicious modification of intent parameters.
+        // Stable per-contact requestCode: colliding codes could route taps to the
+        // wrong conversation.
         val pendingIntent = PendingIntent.getActivity(
             context,
-            contactUid.hashCode(),
+            notificationIdFor(contactUid),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
@@ -114,8 +130,8 @@ class EntanglNotificationManager(
             .setContentIntent(pendingIntent)
             .build()
 
-        val notifId = NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF)
-        Log.d("EntanglNotification", "Posting incoming message notification (ID: $notifId) for contact $contactUid")
+        val notifId = notificationIdFor(contactUid)
+        Log.d("EntanglNotification", "Posting incoming message notification (ID: $notifId)")
         notificationManager.notify(notifId, notification)
     }
 
@@ -123,7 +139,7 @@ class EntanglNotificationManager(
      * Dismiss notifications for a specific contact once user enters conversation.
      */
     fun cancelForContact(contactUid: String) {
-        notificationManager.cancel(NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF))
+        notificationManager.cancel(notificationIdFor(contactUid))
     }
 
     /**
@@ -149,12 +165,14 @@ class EntanglNotificationManager(
 
         val pendingIntent = PendingIntent.getActivity(
             context,
-            contactUid.hashCode(),
+            notificationIdFor(contactUid),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val displayName = peerName.ifBlank { "A peer" }
+        // Display names originate from peer envelopes: bound length defensively even
+        // though the repository sanitizes first (defense in depth at the shade).
+        val displayName = peerName.filterNot { it.isISOControl() }.trim().take(25).ifBlank { "A peer" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle("New Peer Connection Request")
@@ -167,8 +185,8 @@ class EntanglNotificationManager(
             .setContentIntent(pendingIntent)
             .build()
 
-        val notifId = NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF)
-        Log.d("EntanglNotification", "Posting scan ping notification (ID: $notifId) for peer $displayName ($contactUid)")
+        val notifId = notificationIdFor(contactUid)
+        Log.d("EntanglNotification", "Posting scan ping notification (ID: $notifId)")
         notificationManager.notify(notifId, notification)
     }
 
@@ -195,12 +213,12 @@ class EntanglNotificationManager(
 
         val pendingIntent = PendingIntent.getActivity(
             context,
-            contactUid.hashCode(),
+            notificationIdFor(contactUid),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val displayName = peerName.ifBlank { "Peer" }
+        val displayName = peerName.filterNot { it.isISOControl() }.trim().take(25).ifBlank { "Peer" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle("Connection Accepted")
@@ -213,8 +231,8 @@ class EntanglNotificationManager(
             .setContentIntent(pendingIntent)
             .build()
 
-        val notifId = NOTIFICATION_ID_BASE + (contactUid.hashCode() and 0x7FFF)
-        Log.d("EntanglNotification", "Posting scan accept notification (ID: $notifId) for peer $displayName ($contactUid)")
+        val notifId = notificationIdFor(contactUid)
+        Log.d("EntanglNotification", "Posting scan accept notification (ID: $notifId)")
         notificationManager.notify(notifId, notification)
     }
 }

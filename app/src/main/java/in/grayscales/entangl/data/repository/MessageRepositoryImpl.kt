@@ -281,7 +281,7 @@ class MessageRepositoryImpl(
                     }
                     return
                 }
-                val displayName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
+                val displayName = sanitizedPeerName(envelope.senderUsername, senderUid)
                 val profileColor = envelope.senderProfileColor.ifBlank { null }
                 // Key pinning: if we already optically verified a different key, reject rotation without cert
                 if (existing != null && existing.publicKey.isNotEmpty() &&
@@ -350,7 +350,7 @@ class MessageRepositoryImpl(
             }
 
             TransportEnvelope.TYPE_SCAN_ACCEPT -> {
-                val peerName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
+                val peerName = sanitizedPeerName(envelope.senderUsername, senderUid)
                 val profileColor = envelope.senderProfileColor.ifBlank { null }
                 val existing = contactDao.getByUid(senderUid)
                 
@@ -475,7 +475,7 @@ class MessageRepositoryImpl(
                     messageDao.insertOrUpdate(entity)
 
                     if (contactEntity == null) {
-                        val displayName = envelope.senderUsername.ifBlank { "Peer " + senderUid.take(6).uppercase() }
+                        val displayName = sanitizedPeerName(envelope.senderUsername, senderUid)
                         val pendingContact = ContactEntity(
                             uid = senderUid,
                             publicKey = envelope.senderIdentityPub,
@@ -712,6 +712,17 @@ class MessageRepositoryImpl(
         } catch (e: Exception) {
             Log.d("MessageRepository", "Scan echo failed: ${e.message}")
         }
+    }
+
+    /**
+     * Inbound display names are attacker-controlled envelope bytes: bound length,
+     * trim, and strip control characters with the same 25-char budget as local
+     * codenames before persistence, notifications, or rendering.
+     */
+    private fun sanitizedPeerName(raw: String, senderUid: String): String {
+        val clean = raw.filterNot { it.isISOControl() }.trim()
+            .take(NodeIdentityManager.MAX_USERNAME_LENGTH)
+        return clean.ifBlank { "Peer " + senderUid.take(6).uppercase() }
     }
 
     override suspend fun receiveAndStore(message: Message) {

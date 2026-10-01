@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
@@ -58,7 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import `in`.grayscales.entangl.ui.theme.CyberDark
+import `in`.grayscales.entangl.data.network.NetworkQuality
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
@@ -71,50 +70,53 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Clickable 3-bar Network Signal Indicator with an infinite sweep animation.
- * Every 5 seconds, an energetic cyan flash sweeps across bars 1 -> 2 -> 3,
- * simulating Tor keep-alive packets flowing through onion circuits.
+ * Signal indicator bound to live [NetworkQuality]: bars light 0..3 for
+ * internet → listener → confirmed relay contact. Offline renders static dim
+ * bars (animation frozen for battery); online keeps the keep-alive sweep on
+ * lit bars only.
  */
 @Composable
 fun NetworkSignalIndicator(
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    quality: NetworkQuality = NetworkQuality.offline()
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "TorSignalSweep")
+    val litBars = quality.level.coerceIn(0, 3)
 
-    // Sweep cycle duration = 5000ms (5 seconds)
-    val sweepProgress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "signalSweep"
-    )
-
-    // Calculate individual bar flash intensities during the first 800ms (progress 0.0f to 0.16f)
-    // Bar 1 sweeps at 0.00f - 0.06f
-    // Bar 2 sweeps at 0.05f - 0.11f
-    // Bar 3 sweeps at 0.10f - 0.16f
-    fun barAlpha(start: Float, end: Float): Float {
-        return if (sweepProgress in start..end) {
-            val localProgress = (sweepProgress - start) / (end - start)
-            // Triangular pulse: 0.35 -> 1.0 -> 0.35
-            val pulse = if (localProgress < 0.5f) {
-                0.35f + (localProgress * 2f) * 0.65f
-            } else {
-                1.0f - ((localProgress - 0.5f) * 2f) * 0.65f
-            }
-            pulse
-        } else {
-            0.35f
-        }
+    // Battery optimization: no infinite animation while offline.
+    val sweepProgress = if (litBars > 0) {
+        val infiniteTransition = rememberInfiniteTransition(label = "RelaySweep")
+        val progress by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 5000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "signalSweep"
+        )
+        progress
+    } else {
+        -1f
     }
 
-    val bar1Alpha = barAlpha(0.00f, 0.06f)
-    val bar2Alpha = barAlpha(0.05f, 0.11f)
-    val bar3Alpha = barAlpha(0.10f, 0.16f)
+    // Triangular pulse across bars 1 -> 2 -> 3 during the first 800ms of each cycle.
+    fun barAlpha(index: Int, start: Float, end: Float): Float {
+        if (index >= litBars) return 0.22f
+        if (sweepProgress < 0f) return 0.85f
+        if (sweepProgress !in start..end) return 0.45f
+        val localProgress = (sweepProgress - start) / (end - start)
+        val pulse = if (localProgress < 0.5f) {
+            0.45f + (localProgress * 2f) * 0.55f
+        } else {
+            1.0f - ((localProgress - 0.5f) * 2f) * 0.55f
+        }
+        return pulse
+    }
+
+    val bar1Alpha = barAlpha(0, 0.00f, 0.06f)
+    val bar2Alpha = barAlpha(1, 0.05f, 0.11f)
+    val bar3Alpha = barAlpha(2, 0.10f, 0.16f)
 
     Box(
         modifier = modifier
@@ -158,17 +160,17 @@ fun NetworkSignalIndicator(
 }
 
 /**
- * Tor Onion Diagnostics Modal Bottom Sheet.
- * Displays live Tor connection state, circuit routing flowchart,
- * and onion service diagnostics.
- *
- * Fully protected against gesture bar overlap via [WindowInsets.navigationBars].
+ * Relay diagnostics bottom sheet. Every value is live: relay host, listener
+ * mode, and last-contact age come from [NetworkQuality]; no simulated circuits,
+ * IPs, or latency figures.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetworkStatusSheet(
     onDismiss: () -> Unit,
-    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    quality: NetworkQuality = NetworkQuality.offline(),
+    onRenew: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
@@ -205,7 +207,7 @@ fun NetworkStatusSheet(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = "TOR ONION ROUTING DIAGNOSTICS",
+                        text = "RELAY TRANSPORT DIAGNOSTICS",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
@@ -213,7 +215,7 @@ fun NetworkStatusSheet(
                         color = QuantumCyan
                     )
                     Text(
-                        text = "ZERO-KNOWLEDGE ANONYMOUS P2P CIRCUIT",
+                        text = quality.label,
                         fontFamily = QuantumMonospace,
                         fontSize = 9.sp,
                         color = SubatomicGray
@@ -228,19 +230,19 @@ fun NetworkStatusSheet(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(QuantumGreen)
+                            .background(if (quality.hasInternet) QuantumGreen else SubatomicGray)
                     )
                     Text(
-                        text = "142 ms",
+                        text = quality.transportName,
                         fontFamily = QuantumMonospace,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = QuantumGreen
+                        color = if (quality.hasInternet) QuantumGreen else SubatomicGray
                     )
                 }
             }
 
-            // Visual Mock Flowchart: "Device -> Tor Entry -> Onion Service"
+            // Path flowchart: Device -> Relay -> Blinded Inbox (all labels real).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -251,7 +253,7 @@ fun NetworkStatusSheet(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "ACTIVE ONION CIRCUIT PATH",
+                        text = "ACTIVE RELAY PATH",
                         fontFamily = QuantumMonospace,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -273,28 +275,28 @@ fun NetworkStatusSheet(
 
                         FlowArrow()
 
-                        // Node 2: Tor Entry
+                        // Node 2: Relay (live host)
                         CircuitNode(
                             icon = Icons.Default.Router,
-                            title = "Tor Entry",
-                            subtitle = "185.220.101.5",
-                            tint = QuantumCyan
+                            title = "Relay",
+                            subtitle = quality.relayHost.ifBlank { "—" },
+                            tint = if (quality.relayReachable) QuantumCyan else SubatomicGray
                         )
 
                         FlowArrow()
 
-                        // Node 3: Onion Service
+                        // Node 3: Inbox
                         CircuitNode(
                             icon = Icons.Default.Security,
-                            title = "Onion Service",
-                            subtitle = "v3 Hidden P2P",
-                            tint = QuantumGreen
+                            title = "Inbox",
+                            subtitle = "Blinded Topic",
+                            tint = if (quality.relayReachable) QuantumGreen else SubatomicGray
                         )
                     }
                 }
             }
 
-            // Circuit Diagnostics Table
+            // Diagnostics Table (live values only)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -304,18 +306,21 @@ fun NetworkStatusSheet(
                     .padding(14.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DiagnosticRow(label = "PROTOCOL", value = "Tor v0.4.8 (Orbot / Native Onion)")
-                    DiagnosticRow(label = "CIRCUIT HOPS", value = "3 Hops (Entry -> Relay -> Onion)")
-                    DiagnosticRow(label = "KEEP-ALIVE SWEEP", value = "Active (5.0s Beacon Interval)")
-                    DiagnosticRow(label = "STREAM ISOLATION", value = "Enforced Per-Peer Circuit")
-                    DiagnosticRow(label = "POST-QUANTUM KEM", value = "ML-KEM-768 (PQXDH Layer)")
+                    DiagnosticRow(label = "PROTOCOL", value = "Signed envelopes (AES-256-GCM)")
+                    DiagnosticRow(label = "LISTENER", value = quality.listenerMode)
+                    DiagnosticRow(
+                        label = "LAST RELAY CONTACT",
+                        value = quality.lastRelaySuccessAgeSec?.let { "${it}s ago" } ?: "—"
+                    )
+                    DiagnosticRow(label = "PADDING", value = "Fixed 2048-byte blocks")
                 }
             }
 
-            // Renew Circuit Action
+            // Renew Action: actually restarts the relay listener.
             Button(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onRenew()
                     coroutineScope.launch {
                         isRenewing = true
                         delay(650)

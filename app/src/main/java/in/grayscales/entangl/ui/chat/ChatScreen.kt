@@ -64,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -199,6 +200,10 @@ fun ChatScreen(
             contact = contact,
             isUnaccepted = !contact.isAccepted,
             isPendingReciprocal = contact.safetyNumber.startsWith("Pending"),
+            isBlocked = contact.isBlocked,
+            hasUndecrypted = messages.any {
+                it.plaintext == "Encrypted message" && it.status == MessageStatus.PENDING
+            },
             onDismiss = { showNetworkInfoDialog = false },
             onTerminateEntanglement = {
                 showNetworkInfoDialog = false
@@ -208,16 +213,20 @@ fun ChatScreen(
     }
 
     val isUnaccepted = !contact.isAccepted
+    val isBlockedContact = contact.isBlocked
     val isPendingReciprocal = contact.safetyNumber.startsWith("Pending")
     // Banner only while undecrypted PENDING exists; healed rows flip to DELIVERED
     // via unlock, which clears the banner automatically.
     val hasEncryptedMessages = remember(messages) {
         messages.any { it.plaintext == "Encrypted message" && it.status == MessageStatus.PENDING }
     }
+    // Single priority for every surface: Blocked > Unaccepted > Encrypted > Reciprocal.
     val isPendingChannel = isUnaccepted || isPendingReciprocal || hasEncryptedMessages
 
     val statusDotColor = when {
+        isBlockedContact -> IsotopeMagenta
         isUnaccepted -> IsotopeMagenta
+        hasEncryptedMessages -> IsotopeMagenta
         isPendingReciprocal -> QuantumCyan
         else -> QuantumGreen
     }
@@ -241,7 +250,9 @@ fun ChatScreen(
     }
 
     val statusSubtext = when {
+        isBlockedContact -> "Blocked — messaging paused"
         isUnaccepted -> "Pending connection request"
+        hasEncryptedMessages -> "Waiting for peer scan to decrypt"
         isPendingReciprocal -> "Accepted • Reciprocal scan pending"
         else -> "Encrypted channel active"
     }
@@ -328,7 +339,7 @@ fun ChatScreen(
                         text = statusSubtext,
                         fontFamily = QuantumMonospace,
                         fontSize = 10.sp,
-                        color = if (isUnaccepted) IsotopeMagenta else if (isPendingReciprocal) QuantumCyan else SubatomicGray
+                        color = if (isBlockedContact || isUnaccepted || hasEncryptedMessages) IsotopeMagenta else if (isPendingReciprocal) QuantumCyan else SubatomicGray
                     )
                 }
             }
@@ -355,15 +366,19 @@ fun ChatScreen(
                             if (selfDestructDuration != null) IsotopeMagenta else ParticleBorder,
                             RoundedCornerShape(6.dp)
                         )
-                        .clickable {
-                            val next = when (selfDestructDuration) {
-                                null -> 30_000L
-                                30_000L -> 300_000L
-                                300_000L -> 3_600_000L
-                                else -> null
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = "Cycle self-destruct timer",
+                            onClick = {
+                                val next = when (selfDestructDuration) {
+                                    null -> 30_000L
+                                    30_000L -> 300_000L
+                                    300_000L -> 3_600_000L
+                                    else -> null
+                                }
+                                onSetSelfDestruct(next)
                             }
-                            onSetSelfDestruct(next)
-                        }
+                        )
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Row(
@@ -509,8 +524,9 @@ fun ChatScreen(
                     }
                 }
             }
-        } else if (isPendingReciprocal || hasEncryptedMessages) {
-            // Reciprocal QR Share Prompt Banner (when accepted but peer needs our QR code to reply, or incoming messages require decryption)
+        } else if (!isBlockedContact && (isPendingReciprocal || hasEncryptedMessages)) {
+            // Reciprocal QR Share Prompt Banner (suppressed while blocked: the
+            // blocked bar below owns that state and scanning is disabled).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -609,7 +625,7 @@ fun ChatScreen(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (chatRows.isEmpty() && !isUnaccepted) {
+            if (chatRows.isEmpty() && !isUnaccepted && !isBlockedContact) {
                 item {
                     EmptyChatBanner(
                         contact = contact,
@@ -670,9 +686,57 @@ fun ChatScreen(
             }
         }
 
-        // Bottom Bar: Locked Info with 1-tap Accept when unaccepted, blocked bar when
-        // blocked, or Input Bar when accepted
-        if (isUnaccepted) {
+        // Bottom Bar priority: Blocked > Unaccepted > Input. Blocked must win even
+        // for unaccepted contacts, otherwise there is no Unblock path in chat.
+        if (isBlockedContact) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, IsotopeMagenta.copy(alpha = 0.4f)),
+                color = DarkMatter
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Blocked — messaging paused",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            color = NeutronWhite
+                        )
+                        Text(
+                            text = "Incoming dropped, sending disabled",
+                            fontFamily = QuantumMonospace,
+                            fontSize = 10.sp,
+                            color = SubatomicGray
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    OutlinedButton(
+                        onClick = { onUnblockContact?.invoke() },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = QuantumCyan
+                        ),
+                        border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.8f)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Unblock",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = QuantumCyan
+                        )
+                    }
+                }
+            }
+        } else if (isUnaccepted) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -727,54 +791,6 @@ fun ChatScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                }
-            }
-        } else if (contact.isBlocked) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, IsotopeMagenta.copy(alpha = 0.4f)),
-                color = DarkMatter
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Blocked — messaging paused",
-                            fontFamily = QuantumMonospace,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp,
-                            color = NeutronWhite
-                        )
-                        Text(
-                            text = "Incoming dropped, sending disabled",
-                            fontFamily = QuantumMonospace,
-                            fontSize = 10.sp,
-                            color = SubatomicGray
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    OutlinedButton(
-                        onClick = { onUnblockContact?.invoke() },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = QuantumCyan
-                        ),
-                        border = BorderStroke(1.dp, QuantumCyan.copy(alpha = 0.8f)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = "Unblock",
-                            fontFamily = QuantumMonospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = QuantumCyan
                         )
                     }
                 }
@@ -1004,7 +1020,9 @@ private fun NetworkInfoDialog(
     isUnaccepted: Boolean,
     isPendingReciprocal: Boolean,
     onDismiss: () -> Unit,
-    onTerminateEntanglement: (() -> Unit)? = null
+    onTerminateEntanglement: (() -> Unit)? = null,
+    isBlocked: Boolean = false,
+    hasUndecrypted: Boolean = false
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1041,15 +1059,19 @@ private fun NetworkInfoDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     NetworkInfoRow(label = "PEER ID", value = contact.uid)
                     NetworkInfoRow(label = "RELAY NETWORK", value = "Active (Multi-cast)")
-                    NetworkInfoRow(label = "ENCRYPTION", value = "ML-KEM-768 + Double Ratchet")
-                    
+                    NetworkInfoRow(label = "ENCRYPTION", value = "AES-256-GCM + HKDF Chain")
+
                     val statusValue = when {
+                        isBlocked -> "Blocked — messaging paused"
                         isUnaccepted -> "Awaiting local authorization"
+                        hasUndecrypted -> "Waiting for peer scan to decrypt"
                         isPendingReciprocal -> "Awaiting peer authorization"
                         else -> "SECURE & VERIFIED"
                     }
                     val statusColor = when {
+                        isBlocked -> IsotopeMagenta
                         isUnaccepted -> IsotopeMagenta
+                        hasUndecrypted -> IsotopeMagenta
                         isPendingReciprocal -> QuantumCyan
                         else -> QuantumGreen
                     }

@@ -59,6 +59,12 @@ class LocalTransferManager(
     companion object {
         /** Maximum allowed transfer payload size (50 MB) to prevent OOM from malicious length fields */
         private const val MAX_TRANSFER_PAYLOAD_BYTES = 50 * 1024 * 1024
+        /** Maximum raw key bytes accepted for peer key material (X.509 P-256 is ~91B). */
+        private const val MAX_KEY_BYTES = 256
+        /** Row-count caps: flood-proofing independent of the wire-byte cap. */
+        private const val MAX_MIGRATION_CONTACTS = 2000
+        private const val MAX_MIGRATION_MESSAGES = 100_000
+        private const val MAX_MIGRATION_SESSION_KEYS = 2000
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -114,10 +120,17 @@ class LocalTransferManager(
                         }
 
                         // 2. Receive Client Ephemeral Public Key and Client Identity Public Key
+                        // Bounded BEFORE allocation: unbounded readInt is a direct OOM vector.
                         val clientEphPubLen = dis.readInt()
+                        if (clientEphPubLen <= 0 || clientEphPubLen > MAX_KEY_BYTES) {
+                            throw SecurityException("Client ephemeral key length out of bounds: $clientEphPubLen")
+                        }
                         val clientEphPub = ByteArray(clientEphPubLen).also { dis.readFully(it) }
 
                         val clientIdentityPubLen = dis.readInt()
+                        if (clientIdentityPubLen <= 0 || clientIdentityPubLen > MAX_KEY_BYTES) {
+                            throw SecurityException("Client identity key length out of bounds: $clientIdentityPubLen")
+                        }
                         val clientIdentityPub = ByteArray(clientIdentityPubLen).also { dis.readFully(it) }
 
                         // 3. Derive AES-256-GCM tunnel key via ECDH + HKDF
@@ -192,7 +205,10 @@ class LocalTransferManager(
 
                         _progress.value = TransferProgress.Transferring("Sending encrypted archive to new device...")
 
-                        // 7. Transmit payload
+                        // 7. Transmit payload (size-capped on send, not just receive)
+                        if (encryptedBytes.size > MAX_TRANSFER_PAYLOAD_BYTES) {
+                            throw SecurityException("Transfer payload size (${encryptedBytes.size} bytes) exceeds maximum allowed (${MAX_TRANSFER_PAYLOAD_BYTES} bytes)")
+                        }
                         dos.writeInt(encryptedBytes.size)
                         dos.write(encryptedBytes)
                         dos.flush()
@@ -300,21 +316,50 @@ class LocalTransferManager(
                         val payload = DeviceMigrationPayload.fromCbor(decryptedCbor)
                             ?: throw IllegalStateException("Corrupted migration payload format")
 
+                        // Gate everything BEFORE any insert: counts, succession trust,
+                        // referential closure, and profile sanitization. A single bad row
+                        // must reject the archive, never half-import it.
+                        if (payload.contacts.size > MAX_MIGRATION_CONTACTS ||
+                            payload.messages.size > MAX_MIGRATION_MESSAGES ||
+                            payload.sessionKeys.size > MAX_MIGRATION_SESSION_KEYS
+                        ) {
+                            throw SecurityException("Migration archive exceeds row limits")
+                        }
+                        val cert = payload.certificate
+                            ?: throw SecurityException("Migration archive missing succession certificate")
+                        if (!SuccessionCertificate.verify(cert, keyPairGenerator)) {
+                            throw SecurityException("Succession certificate signature invalid")
+                        }
+                        val archivedUids = payload.contacts.map { it.uid }.toSet()
+                        val existingUids = contactDao.getAll().map { it.uid }.toSet()
+                        for (m in payload.messages) {
+                            if (m.contactUid !in archivedUids && m.contactUid !in existingUids) {
+                                throw SecurityException("Orphan message references unknown contact")
+                            }
+                        }
+
                         _progress.value = TransferProgress.Transferring("Importing ${payload.contacts.size} contacts and ${payload.messages.size} messages...")
 
-                        // 6. Insert contacts
+                        // 6. Insert contacts (trust flags merged, never reset: verified
+                        // succession + physical possession of both devices continues the
+                        // trust already established on the old device — no rescans).
                         for (c in payload.contacts) {
+                            val existing = contactDao.getByUid(c.uid)
                             contactDao.insertOrUpdate(
                                 ContactEntity(
                                     uid = c.uid,
                                     publicKey = c.publicKey,
                                     onionAddress = c.onionAddress,
                                     safetyNumber = c.safetyNumber,
-                                    displayName = c.displayName,
+                                    displayName = c.displayName?.trim()
+                                        ?.take(NodeIdentityManager.MAX_USERNAME_LENGTH),
                                     createdAt = c.createdAt,
                                     lastSeenAt = c.lastSeenAt,
                                     isAccepted = c.isAccepted,
-                                    profileColor = c.profileColor
+                                    profileColor = c.profileColor,
+                                    hasScannedPeer = existing?.hasScannedPeer ?: c.isAccepted,
+                                    hasBeenScanned = existing?.hasBeenScanned ?: c.isAccepted,
+                                    isBlocked = existing?.isBlocked ?: false
                                 )
                             )
                         }

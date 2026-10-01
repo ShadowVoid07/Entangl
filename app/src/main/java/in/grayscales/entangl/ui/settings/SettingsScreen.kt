@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import `in`.grayscales.entangl.core.security.SecurityEvent
+import `in`.grayscales.entangl.data.network.NetworkQuality
 import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
@@ -66,7 +67,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     localUsername: String = "",
     localProfileColor: String = "",
-    onDeviceTransfer: () -> Unit = {}
+    onDeviceTransfer: () -> Unit = {},
+    networkQuality: NetworkQuality = NetworkQuality.offline(),
+    onRenewTransport: () -> Unit = {}
 ) {
     var showNetworkSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -74,7 +77,9 @@ fun SettingsScreen(
     if (showNetworkSheet) {
         NetworkStatusSheet(
             onDismiss = { showNetworkSheet = false },
-            sheetState = sheetState
+            sheetState = sheetState,
+            quality = networkQuality,
+            onRenew = onRenewTransport
         )
     }
 
@@ -113,20 +118,23 @@ fun SettingsScreen(
                 )
             }
 
-            // Clickable Network Signal Indicator with 5-second Tor Keep-Alive Pulse
+            // Live connectivity: bars = internet → listener → confirmed relay.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NetworkSignalIndicator(
-                    onClick = { showNetworkSheet = true }
+                    onClick = { showNetworkSheet = true },
+                    quality = networkQuality
                 )
 
+                // Internet dot: green only with validated upstream internet.
+                // Threat state lives in the matrix label + advisory card/dialog.
                 Box(
                     modifier = Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (threats.isEmpty()) QuantumGreen else IsotopeMagenta)
+                        .background(if (networkQuality.hasInternet) QuantumGreen else SubatomicGray)
                 )
             }
         }
@@ -217,9 +225,9 @@ fun SettingsScreen(
                 }
 
                 SecurityRow(label = "ACTIVE CODENAME", value = localUsername.ifBlank { "Anonymous Node" })
-                SecurityRow(label = "ASYMMETRIC IDENTITY", value = "Ed25519 (Hardware Keystore)")
-                SecurityRow(label = "POST-QUANTUM KEM", value = "ML-KEM-768 (PQXDH)")
-                SecurityRow(label = "FORWARD SECRECY", value = "Double Ratchet + HMAC-SHA256")
+                SecurityRow(label = "ASYMMETRIC IDENTITY", value = "P-256/ECDSA (Hardware Keystore)")
+                SecurityRow(label = "MESSAGE RATCHET", value = "HKDF Chain + AES-256-GCM")
+                SecurityRow(label = "FORWARD SECRECY", value = "Per-Message Keys + HMAC-SHA256")
                 SecurityRow(label = "STORAGE ENCRYPTION", value = "SQLCipher + Double-Encrypted")
                 SecurityRow(label = "MEMORY ZEROIZATION", value = "Off-Heap NativeKeyBuffer")
                 SecurityRow(label = "ZERO LEAK NOTIFICATION", value = "VISIBILITY_SECRET Enforced")

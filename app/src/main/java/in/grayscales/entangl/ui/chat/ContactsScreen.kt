@@ -40,7 +40,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,12 +55,14 @@ import `in`.grayscales.entangl.ui.theme.ColorUtils
 import `in`.grayscales.entangl.ui.theme.CyberDark
 import `in`.grayscales.entangl.ui.theme.DarkMatter
 import `in`.grayscales.entangl.ui.theme.DarkMatterVariant
+import `in`.grayscales.entangl.ui.theme.IsotopeMagenta
 import `in`.grayscales.entangl.ui.theme.NeutronWhite
 import `in`.grayscales.entangl.ui.theme.ParticleBorder
 import `in`.grayscales.entangl.ui.theme.QuantumCyan
 import `in`.grayscales.entangl.ui.theme.QuantumMonospace
 import `in`.grayscales.entangl.ui.theme.SubatomicGray
 import `in`.grayscales.entangl.ui.theme.VoidBackground
+import kotlinx.coroutines.delay
 
 @Composable
 fun ContactsScreen(
@@ -159,7 +160,11 @@ fun ContactsScreen(
                         color = QuantumCyan
                     )
                     Text(
-                        text = "${contacts.size} connected peers",
+                        text = buildString {
+                            append("${contacts.size} peers")
+                            val pending = contacts.count { !it.isAccepted }
+                            if (pending > 0) append(" • $pending requests")
+                        },
                         fontFamily = QuantumMonospace,
                         fontSize = 11.sp,
                         color = SubatomicGray
@@ -273,7 +278,8 @@ fun ContactsScreen(
             }
 
             val pendingConnections = filteredContacts.filter { !it.isAccepted }
-            val establishedContacts = filteredContacts.filter { it.isAccepted }
+            val establishedContacts = filteredContacts.filter { it.isAccepted && !it.isBlocked }
+            val blockedContacts = filteredContacts.filter { it.isAccepted && it.isBlocked }
 
             LazyColumn(
                 modifier = Modifier
@@ -353,6 +359,32 @@ fun ContactsScreen(
                 }
 
                 items(establishedContacts, key = { it.uid }) { contact ->
+                    ChatListRow(
+                        contact = contact,
+                        isSelected = contact.uid == selectedContactUid,
+                        onClick = { onSelectContact(contact) },
+                        lastMessage = lastMessages[contact.uid],
+                        onOptionsClick = { optionsContact = contact },
+                        nowMillis = nowMillis
+                    )
+                }
+
+                if (blockedContacts.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "BLOCKED",
+                            fontFamily = QuantumMonospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = IsotopeMagenta,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                }
+
+                items(blockedContacts, key = { "blocked_" + it.uid }) { contact ->
                     ChatListRow(
                         contact = contact,
                         isSelected = contact.uid == selectedContactUid,
