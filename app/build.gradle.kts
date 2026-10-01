@@ -56,6 +56,16 @@ android {
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // Native debug symbols for Play Console (informational, non-blocking):
+            // verified 2026-10-01 that all four bundled .so files (SQLCipher, ML Kit
+            // barhopper, image_processing_util_jni, androidx.graphics.path) ship fully
+            // stripped by their vendors (no .debug_*/.symtab sections), so AGP emits no
+            // symbols zip. Kept at FULL so any future unstripped dependency is covered
+            // automatically. The Play "upload debug symbols" warning therefore cannot
+            // be satisfied for v1.0.0 and the release proceeds regardless.
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
         }
     }
 
