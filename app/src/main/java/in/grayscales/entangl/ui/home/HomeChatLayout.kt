@@ -166,9 +166,6 @@ fun HomeChatLayout(
     onShowMyQr: () -> Unit = onHandshake,
     onOpenDashboard: () -> Unit = onOpenSettings,
     onAcceptContact: (Contact) -> Unit = {},
-    localUsername: String = "",
-    localProfileColor: String = "",
-    onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
     onClearChat: (Contact) -> Unit = {},
     onBlockToggle: (Contact) -> Unit = {},
     lastMessages: Map<String, Message?> = emptyMap(),
@@ -211,9 +208,6 @@ fun HomeChatLayout(
                     onScanQr = onScanQr,
                     onShowMyQr = onShowMyQr,
                     onOpenDashboard = onOpenDashboard,
-                    localUsername = localUsername,
-                    localProfileColor = localProfileColor,
-                    onUpdateProfile = onUpdateProfile,
                     onClearChat = onClearChat,
                     onBlockToggle = onBlockToggle,
                     lastMessages = lastMessages
@@ -365,7 +359,7 @@ private fun StandbyPane(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "SHOW MY BEACON",
+                        text = "SHOW MY CODE",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,

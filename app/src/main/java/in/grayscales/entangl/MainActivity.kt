@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -396,8 +397,10 @@ class MainActivity : ComponentActivity() {
                     if (liveSuccess != null) {
                         Dialog(onDismissRequest = { successContact = null }) {
                             Card(
+                                // Capped width so tablets/foldables keep a readable dialog.
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .widthIn(max = 560.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .border(1.dp, QuantumCyan, RoundedCornerShape(16.dp)),
                                 colors = CardDefaults.cardColors(containerColor = DarkMatter)
@@ -667,9 +670,6 @@ class MainActivity : ComponentActivity() {
                                     onScanQr = { navigateTo(AppScreen.HANDSHAKE, initialTab = 1) },
                                     onShowMyQr = { navigateTo(AppScreen.HANDSHAKE, initialTab = 0) },
                                     onOpenDashboard = { navigateTo(AppScreen.SETTINGS) },
-                                    localUsername = currentUsername,
-                                    localProfileColor = currentProfileColor,
-                                    onUpdateProfile = null,
                                     lastMessages = lastMessages
                                 )
                             }

@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -122,27 +123,43 @@ fun QrScannerView(
     var scannedTransferPayload by remember { mutableStateOf<TransferQrPayload?>(null) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    // ML Kit client creation can throw on devices without Google Play Services
+    // components (common on Transsion/MediaTek ROMs). A null client degrades to the
+    // bundled ZXing engine instead of crashing composition.
     val barcodeScanner = remember {
-        BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                .build()
-        )
+        runCatching {
+            BarcodeScanning.getClient(
+                BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build()
+            )
+        }.getOrNull()
     }
+    var cameraError by remember { mutableStateOf<String?>(null) }
+    var cameraAttempt by remember { mutableIntStateOf(0) }
 
-    // Fetch CameraProvider once
-    LaunchedEffect(Unit) {
-        val future = ProcessCameraProvider.getInstance(context)
-        future.addListener({
-            cameraProvider = future.get()
-        }, ContextCompat.getMainExecutor(context))
+    // Fetch CameraProvider once (retryable). getInstance/future.get() throw on
+    // devices whose camera HAL rejects CameraX — surface error UI, never crash.
+    LaunchedEffect(cameraAttempt) {
+        try {
+            val future = ProcessCameraProvider.getInstance(context)
+            future.addListener({
+                try {
+                    cameraProvider = future.get()
+                } catch (_: Exception) {
+                    cameraError = "Camera unavailable on this device."
+                }
+            }, ContextCompat.getMainExecutor(context))
+        } catch (_: Exception) {
+            cameraError = "Camera unavailable on this device."
+        }
     }
 
     DisposableEffect(Unit) {
         onDispose {
             cameraExecutor.shutdown()
             cameraProvider?.unbindAll()
-            try { barcodeScanner.close() } catch (_: Exception) {}
+            try { barcodeScanner?.close() } catch (_: Exception) {}
         }
     }
 
@@ -227,10 +244,98 @@ fun QrScannerView(
         return
     }
 
+    // Camera failure card: CameraX/MLKit init can throw on OEM ROMs with broken
+    // camera HAL or missing Play Services components. This used to crash the app
+    // from composition — now it degrades to an explanatory card with retry.
+    if (cameraError != null) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(VoidBackground)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(DarkMatter)
+                    .border(1.dp, IsotopeMagenta, RoundedCornerShape(16.dp))
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = IsotopeMagenta,
+                    modifier = Modifier.size(48.dp)
+                )
+
+                Text(
+                    text = "OPTICAL SENSOR UNAVAILABLE",
+                    fontFamily = QuantumMonospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    letterSpacing = 1.sp,
+                    color = IsotopeMagenta,
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = cameraError
+                        ?: "The camera could not be started on this device. You can still receive your peer's scan and show your code instead.",
+                    fontFamily = QuantumMonospace,
+                    fontSize = 11.sp,
+                    color = NeutronWhite,
+                    textAlign = TextAlign.Center
+                )
+
+                Button(
+                    onClick = {
+                        cameraError = null
+                        cameraAttempt++
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "RETRY OPTICAL SENSOR",
+                        fontFamily = QuantumMonospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+
+                Button(
+                    onClick = onBack,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = SubatomicGray
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "RETURN TO CONSOLE",
+                        fontFamily = QuantumMonospace,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+        return
+    }
+
     // Reactive camera binding on cameraProvider, previewView, front/back toggle, or target lock
-    LaunchedEffect(useFrontCamera, cameraProvider, previewView, isTargetLocked) {
-        val provider = cameraProvider ?: return@LaunchedEffect
-        val pView = previewView ?: return@LaunchedEffect
+    LaunchedEffect(useFrontCamera, cameraProvider, previewView, isTargetLocked, cameraAttempt) {
+        try {
+            val provider = cameraProvider ?: return@LaunchedEffect
+            val pView = previewView ?: return@LaunchedEffect
 
         if (isTargetLocked) {
             // Power & thermal optimization: unbind camera and disable torch immediately when QR code is acquired
@@ -303,11 +408,14 @@ fun QrScannerView(
                 }
             }
 
-            // Engine 2: Google MLKit Hardware-Accelerated Barcode Detector
+            // Engine 2: Google MLKit Hardware-Accelerated Barcode Detector.
+            // Null-safe: without Play Services components the client is null and the
+            // bundled ZXing engine above carries scanning alone.
             val mediaImage = imageProxy.image
-            if (mediaImage != null) {
+            val mlkitScanner = barcodeScanner
+            if (mediaImage != null && mlkitScanner != null) {
                 val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                barcodeScanner.process(inputImage)
+                mlkitScanner.process(inputImage)
                     .addOnSuccessListener { barcodes ->
                         if (scannedPayload != null || scannedTransferPayload != null) return@addOnSuccessListener
                         for (barcode in barcodes) {
@@ -360,7 +468,12 @@ fun QrScannerView(
                 isTorchOn = false
             }
         } catch (_: Exception) {
-            // Handle camera binding failure gracefully
+            // Binding failure (HAL rejects use-case combo on this device): error UI.
+            cameraError = "Camera unavailable on this device."
+        }
+        } catch (_: Exception) {
+            // Binding setup failure (resolution config, selector init): error UI.
+            cameraError = "Camera unavailable on this device."
         }
     }
 
@@ -375,13 +488,17 @@ fun QrScannerView(
                         if (event.action == MotionEvent.ACTION_UP) {
                             val currentCamera = camera
                             if (currentCamera != null) {
-                                val factory = meteringPointFactory
-                                val point = factory.createPoint(event.x, event.y)
-                                val action = FocusMeteringAction.Builder(
-                                    point,
-                                    FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
-                                ).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
-                                currentCamera.cameraControl.startFocusAndMetering(action)
+                                // Metering factory is a platform type: guard against OEM
+                                // PreviewView builds that return null before attach.
+                                val factory = runCatching { meteringPointFactory }.getOrNull()
+                                if (factory != null) {
+                                    val point = factory.createPoint(event.x, event.y)
+                                    val action = FocusMeteringAction.Builder(
+                                        point,
+                                        FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+                                    ).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
+                                    currentCamera.cameraControl.startFocusAndMetering(action)
+                                }
                             }
                             v.performClick()
                         }

@@ -61,8 +61,11 @@ fun QuantumScannerOverlay(
             val canvasWidth = size.width
             val canvasHeight = size.height
 
-            // Calculate square scan window in center (75% of screen width)
-            val boxSize = (canvasWidth * 0.75f).coerceAtMost(canvasHeight * 0.5f)
+            // Calculate square scan window in center (75% of screen width).
+            // Capped so tablets/foldables keep a usable viewfinder, not a wall.
+            val boxSize = (canvasWidth * 0.75f)
+                .coerceAtMost(canvasHeight * 0.5f)
+                .coerceAtMost(480.dp.toPx())
             val left = (canvasWidth - boxSize) / 2f
             val top = (canvasHeight - boxSize) / 2f
             val right = left + boxSize

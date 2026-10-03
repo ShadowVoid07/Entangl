@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -141,7 +142,7 @@ fun MyQrScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                text = "MY BEACON QR",
+                text = "MY CODE QR",
                 fontFamily = QuantumMonospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
@@ -158,10 +159,12 @@ fun MyQrScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // QR Frame Card with Dynamic Animated TTL Depleting Border
+        // QR Frame Card with Dynamic Animated TTL Depleting Border.
+        // Capped width: uncapped fillMaxWidth renders a giant code on tablets.
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
+                .widthIn(max = 480.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(DarkMatter)
                 .drawWithCache {

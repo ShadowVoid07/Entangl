@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -300,6 +301,7 @@ private fun UserMessageBubble(
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.80f)
+                .widthIn(max = 640.dp)
                 .clip(frameShape)
                 .background(bubbleColor)
                 .border(1.dp, borderColor, frameShape)

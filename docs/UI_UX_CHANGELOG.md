@@ -1,6 +1,10 @@
 # Entangl UI/UX Changelog
 
-> v1.0.0 is the first build. This file describes the shipped baseline exactly.
+> v1.1.0 is the current build. This file describes the shipped baseline exactly.
+
+### v1.1.0 — Crash Hardening & Consistency Update (2026-10-04)
+- **Camera crash fix:** scanner init fully guarded with retry card + ZXing fallback; big-screen width caps (QR 480dp, bubbles 640dp, dialogs 560dp); unified Show my code / Scan peer code language; dead profile-update plumbing and demo simulator removed.
+- Carries forward the v1.0.0 baseline: mutual handshake with auto-convergence, ratcheted messaging with self-heal, TTL, block/clear/delete, presence, replay-proof notifications, SQLCipher Room v5.
 
 ### v1.0.0 — First Stable Build (2026-10-01)
 - **Identity onboarding:** `EditProfileScreen` one-time codename (1–25) + HSV/hex avatar color, permanently bound, no presets.
@@ -9,6 +13,10 @@
 - **Settings/transfer:** `SettingsScreen` protocol matrix (shipped primitives) + succession entry + `Build: 1.0.0` footer, live signal bars + internet dot (`NetworkQuality`), honest relay diagnostics sheet with working Renew, `DeviceTransferScreen` export/import with transfer-QR mode separation.
 - **Transport/storage:** signed relay envelopes with verified ACKs/TTL, ping echo + handshake retry convergence, self-healing chains, exactly-once processing (`processed_envelopes`, replay-proof notifications gated to live arrivals), SQLCipher Room v5, downgrade-only destructive fallback.
 - **Quality:** 51 `:app` + 8 `:shared` tests green; `lintDebug` + `lintRelease` 0 code findings; zero `@Suppress`; release assembles with R8.
+
+### Follow-up: camera-open crash + big-screen hardening (same v1.0.0)
+- **Crash cause:** release stack de-obfuscated to `QrScannerView` composition (`mapping.txt`). Init paths that throw there — ML Kit client creation (breaks on Play-Services-less Transsion/MediaTek ROMs), `ProcessCameraProvider.getInstance/future.get()`, and binding setup — are now total: nullable ML Kit with ZXing-only fallback, retryable provider fetch, outer-guarded binding, guarded focus-metering, and an `OPTICAL SENSOR UNAVAILABLE` card with Retry/Back instead of a fatal exception.
+- **Big screens:** standby pane is dual-pane-only with an inert phone fallback; QR frame capped 480dp, scanner window capped 480dp, message bubbles capped 640dp, handshake-path dialogs capped 560dp; exit-animation snapshot prevents stale-frame flashes.
 
 ### Follow-up: UI-state audit + storage audit fixes (same v1.0.0)
 - **Chat priority unified** (`Blocked > Unaccepted > Encrypted > Reciprocal`) across bottom bar, banners, header dot/subtext, and diagnostics dialog — blocked chats get an Unblock path everywhere, no more stacked or dead states; empty-chat banner suppressed when blocked.

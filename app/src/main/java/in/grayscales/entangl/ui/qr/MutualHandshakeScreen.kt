@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -149,8 +150,10 @@ fun MutualHandshakeScreen(
             dismissedPeerUids = dismissedPeerUids + newlyDetectedPeer.uid
         }) {
             Card(
+                // Capped width so tablets/foldables keep a readable dialog, not a wall.
                 modifier = Modifier
                     .fillMaxWidth()
+                    .widthIn(max = 560.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .border(1.dp, QuantumGreen, RoundedCornerShape(16.dp)),
                 colors = CardDefaults.cardColors(containerColor = DarkMatter)
@@ -336,7 +339,7 @@ fun MutualHandshakeScreen(
             if (isDualPane) {
                 // Side-by-side split-pane for foldables / tablets / landscape
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Left Pane: TRANSMIT [BEACON]
+                    // Left Pane: Show-my-code
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -363,7 +366,7 @@ fun MutualHandshakeScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "MY QR [BEACON]",
+                                    text = "SHOW MY CODE",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -393,7 +396,7 @@ fun MutualHandshakeScreen(
                             .background(ParticleBorder)
                     )
 
-                    // Right Pane: SCAN QR [SENSOR]
+                    // Right Pane: Scan peer code
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -420,7 +423,7 @@ fun MutualHandshakeScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "SCAN QR [SENSOR]",
+                                    text = "SCAN PEER CODE",
                                     fontFamily = QuantumMonospace,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -613,7 +616,7 @@ private fun SegmentedHandshakeTabRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // MY QR [BEACON]
+            // SHOW MY CODE tab
             val transmitSelected = selectedTab == 0
             Box(
                 modifier = Modifier
@@ -635,7 +638,7 @@ private fun SegmentedHandshakeTabRow(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "MY QR [BEACON]",
+                        text = "SHOW MY CODE",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
@@ -645,7 +648,7 @@ private fun SegmentedHandshakeTabRow(
                 }
             }
 
-            // SCAN QR [SENSOR]
+            // SCAN PEER CODE tab
             val receiveSelected = selectedTab == 1
             Box(
                 modifier = Modifier
@@ -667,7 +670,7 @@ private fun SegmentedHandshakeTabRow(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "SCAN QR [SENSOR]",
+                        text = "SCAN PEER CODE",
                         fontFamily = QuantumMonospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,

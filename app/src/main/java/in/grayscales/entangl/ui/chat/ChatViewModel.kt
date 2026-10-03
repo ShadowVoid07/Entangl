@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(
@@ -195,33 +194,6 @@ class ChatViewModel(
     fun deleteMessage(messageId: String) {
         viewModelScope.launch {
             messageRepository.deleteMessage(messageId)
-        }
-    }
-
-    /**
-     * Demo / test utility: Simulates an incoming end-to-end encrypted packet
-     * from the active peer to demonstrate live ratchet decryption and zero-leak notifications.
-     */
-    fun simulateIncomingPacket(plaintext: String = "Quantum link established. Transmission secure.") {
-        val contact = activeContact.value ?: return
-
-        viewModelScope.launch {
-            val messageId = UUID.randomUUID().toString()
-            val now = System.currentTimeMillis()
-            val selfDestructAt = _selfDestructDuration.value?.let { now + it }
-
-            val message = Message(
-                id = messageId,
-                contactUid = contact.uid,
-                plaintext = plaintext,
-                direction = Direction.INCOMING,
-                status = MessageStatus.DELIVERED,
-                timestamp = now,
-                selfDestructAt = selfDestructAt
-            )
-
-            messageRepository.receiveAndStore(message)
-            notificationManager.showIncomingMessageNotification(contact.uid)
         }
     }
 

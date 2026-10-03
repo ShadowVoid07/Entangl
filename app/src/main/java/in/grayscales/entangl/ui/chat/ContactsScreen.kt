@@ -77,9 +77,6 @@ fun ContactsScreen(
     onShowMyQr: () -> Unit = onHandshake,
     onOpenDashboard: () -> Unit = onOpenSettings,
     onAcceptContact: (Contact) -> Unit = {},
-    localUsername: String = "",
-    localProfileColor: String = "",
-    onUpdateProfile: ((newUsername: String, newColorHex: String) -> Unit)? = null,
     onClearChat: (Contact) -> Unit = {},
     onBlockToggle: (Contact) -> Unit = {},
     lastMessages: Map<String, Message?> = emptyMap()
